@@ -24,3 +24,17 @@ The schema is auto-generated and thus up-to-date with this repository. If manual
 ```bash
 ./mill schema-gen.generate
 ```
+
+# Development
+
+- This project uses devenv (Nix) - ([`devenv.nix`](./devenv.nix)) - for dependency management and reproducible environments.
+- The build system is Mill, and the core technologies are ZIO, Caliban and Scala 3.
+- Unit and integration tests are available.
+
+```bash
+./mill gateway.run # Needs PORT in environment
+./mill -w -i gateway.runBackground # Watch and run
+
+./mill resolve __
+```
+
