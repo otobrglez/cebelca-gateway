@@ -79,3 +79,19 @@ final private[graphql] case class Partner(
   city: String,
   invoices: ZQuery[CebelcaToken, CebelcaError, List[Invoice]]
 )
+
+/** A service / pricelist entry, mirroring the UI's "Storitve" page. Sourced from the `invoice-sent-o` resource;
+  * field names are normalised from the upstream row (`object_title` → `title`, `measure_unit` → `mu`).
+  */
+final private[graphql] case class Service(
+  id: Long,
+  title: String,
+  price: Double,
+  mu: String,
+  vat: Double,
+  group: String,
+  konto: String
+)
+private[graphql] object Service:
+  def from(s: gateway.Service): Service =
+    Service(s.id, s.object_title, s.price, s.measure_unit, s.vat, s.group, s.konto)

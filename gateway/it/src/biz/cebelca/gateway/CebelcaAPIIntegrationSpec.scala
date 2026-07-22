@@ -45,6 +45,13 @@ object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
           debtors.size <= all.size
         )
     },
+    test("services: select-all decodes invoice-sent-o pricelist rows") {
+      for services <- CebelcaAPI.services
+      yield assertTrue(
+        services.nonEmpty,
+        services.forall(s => s.price >= 0 && s.object_title.nonEmpty)
+      )
+    },
     test("partnersFiltered(search): case-insensitive substring match on name, server-side") {
       for
         all      <- CebelcaAPI.partnersFiltered("all")

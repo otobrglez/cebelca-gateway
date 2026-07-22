@@ -10,7 +10,8 @@ import caliban.schema.ArgBuilder.auto.*
 
 final case class Queries(
   partners: PartnersArgs => RIO[CebelcaToken, List[graphql.Partner]],
-  partner: PartnerArgs => RIO[CebelcaToken, graphql.Partner]
+  partner: PartnerArgs => RIO[CebelcaToken, graphql.Partner],
+  services: RIO[CebelcaToken, List[graphql.Service]]
 )
 
 object GraphQLAPI:
@@ -21,6 +22,7 @@ object GraphQLAPI:
   private given Schema[Any, graphql.PartnerArgs]      = Schema.gen
   private given Schema[Any, graphql.PartnersArgs]     = Schema.gen
   private given Schema[Any, graphql.Line]             = Schema.gen
+  private given Schema[Any, graphql.Service]          = Schema.gen
   private given Schema[CebelcaToken, graphql.Invoice] = Schema.gen
   private given Schema[CebelcaToken, graphql.Partner] = Schema.gen
   private given Schema[CebelcaToken, graphql.Queries] = Schema.gen
@@ -82,7 +84,8 @@ object GraphQLAPI:
     val resolver = RootResolver(
       Queries(
         partners = selectPartners(api),
-        partner = args => api.partner(args.id).mapBoth(sanitizeError, toPartner(api))
+        partner = args => api.partner(args.id).mapBoth(sanitizeError, toPartner(api)),
+        services = api.services.mapBoth(sanitizeError, _.map(graphql.Service.from))
       )
     )
     graphQL(resolver)

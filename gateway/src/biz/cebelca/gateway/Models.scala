@@ -45,3 +45,16 @@ final case class Item(
   tax: Double,
   disabled: Int
 ) derives JsonDecoder
+
+/** A service / pricelist entry, as shown on the UI's "Storitve" page. Backed by the `invoice-sent-o` resource
+  * (the API's "Items&services for sent invoice bodies"), whose `select-all` returns the pricelist rows.
+  */
+final case class Service(
+  id: Long,
+  object_title: String,
+  price: Double,
+  measure_unit: String,
+  vat: Double,
+  @jsonField("group_") group: String,
+  konto: String
+) derives JsonDecoder

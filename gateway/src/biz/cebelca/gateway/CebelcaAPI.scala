@@ -37,6 +37,7 @@ final case class CebelcaAPI private (
   def partner(id: Long): APITask[Partner] = queryFirst[Partner](Cmd.selectOne("partner", id))
   def invoices: APITask[List[InvoiceHead]]                     = query[InvoiceHead](Cmd.select("invoice-sent"))
   def invoiceLines: APITask[List[InvoiceLine]]                 = query[InvoiceLine](Cmd.select("invoice-sent-b"))
+  def services: APITask[List[Service]]                         = query[Service](Cmd.select("invoice-sent-o"))
 
 object CebelcaAPI:
   private type APITask[+A] = ZIO[CebelcaAPI & CebelcaToken, CebelcaError, A]
@@ -50,3 +51,4 @@ object CebelcaAPI:
     ZIO.serviceWithZIO[CebelcaAPI](_.partnersFiltered(filter, search))
   def invoices: APITask[List[InvoiceHead]]                     = ZIO.serviceWithZIO[CebelcaAPI](_.invoices)
   def invoiceLines: APITask[List[InvoiceLine]]                 = ZIO.serviceWithZIO[CebelcaAPI](_.invoiceLines)
+  def services: APITask[List[Service]]                         = ZIO.serviceWithZIO[CebelcaAPI](_.services)

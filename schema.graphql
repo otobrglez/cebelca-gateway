@@ -6,7 +6,7 @@
 #
 # To regenerate: ./mill schema-gen.generate
 #
-# Generated from git: 92196ec-dirty
+# Generated from git: 38d73fa-dirty
 # ─────────────────────────────────────────────────────────────────────────────
 
 schema {
@@ -52,4 +52,15 @@ type Partner {
 type Queries {
   partners(ids: [Long!], filter: PartnerFilter, search: String): [Partner!]
   partner(id: Long!): Partner
+  services: [Service!]
+}
+
+type Service {
+  id: Long!
+  title: String!
+  price: Float!
+  mu: String!
+  vat: Float!
+  group: String!
+  konto: String!
 }

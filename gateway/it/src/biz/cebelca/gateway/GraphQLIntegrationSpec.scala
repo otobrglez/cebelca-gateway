@@ -70,5 +70,12 @@ object GraphQLIntegrationSpec extends GatewaySpecDefault:
           // "Kaldi" doesn't match "demo" — the server excludes it
           !out.contains("Kaldi")
         )
+    },
+    test("services: returns the pricelist") {
+      for res <- run("{ services { id title price mu vat } }")
+      yield assertTrue(
+        res.errors.isEmpty,
+        res.data.toString.contains("Management and development")
+      )
     }
   ).provideShared(layers)
