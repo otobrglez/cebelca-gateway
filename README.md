@@ -17,7 +17,9 @@ The recent version of the gateway with UI is auto-deployed at: [`cebelca-gateway
 
 # GraphQL Schema
 
-The up-to-date GraphQL schema can be found at the top of this folder: [`schema.graphql`](./schema.graphql). Additional configuration for GraphQL clients is also available via [`graphql.config.yml`](./graphql.config.yml) - i.e. environments and endpoints.
+The up-to-date GraphQL schema is at [cebelca-gateway.pinkstack.com/schema.graphql](https://cebelca-gateway.pinkstack.com/schema.graphql) or at the roof of this folder - [`schema.graphql`](./schema.graphql).
+
+Additional configuration for GraphQL clients is also available via [`graphql.config.yml`](./graphql.config.yml) - i.e. environments and endpoints.
 
 The schema is auto-generated and thus up to date with this repository. If manual regeneration is needed, use:
 
