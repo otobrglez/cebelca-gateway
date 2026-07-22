@@ -16,7 +16,7 @@ metadata:
   namespace: cebelca-prod
   labels: { app: gateway }
 spec:
-  replicas: 2
+  replicas: 1
   selector: { matchLabels: { app: gateway } }
   template:
     metadata: { labels: { app: gateway } }
