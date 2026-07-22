@@ -45,11 +45,11 @@ object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
           debtors.size <= all.size
         )
     },
-    test("invoicesBetween: date bounds filter server-side on date_sent") {
+    test("invoicesBy: date bounds filter server-side on date_sent") {
       for
-        all      <- CebelcaAPI.invoicesBetween(None, None)
-        inRange  <- CebelcaAPI.invoicesBetween(Some("2026-07-20"), Some("2026-07-20"))
-        empty    <- CebelcaAPI.invoicesBetween(Some("2025-01-01"), Some("2025-12-31"))
+        all      <- CebelcaAPI.invoicesBy()
+        inRange  <- CebelcaAPI.invoicesBy(dateFrom = Some("2026-07-20"), dateTo = Some("2026-07-20"))
+        empty    <- CebelcaAPI.invoicesBy(dateFrom = Some("2025-01-01"), dateTo = Some("2025-12-31"))
       yield assertTrue(
         all.nonEmpty,
         inRange.nonEmpty,
@@ -57,6 +57,21 @@ object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
         inRange.size <= all.size,
         empty.isEmpty
       )
+    },
+    test("invoicesBy: status filter selects server-side subsets") {
+      for
+        all     <- CebelcaAPI.invoicesBy("all")
+        paid    <- CebelcaAPI.invoicesBy("payed")
+        unpaid  <- CebelcaAPI.invoicesBy("unpayed")
+      yield
+        val allIds = all.map(_.id).toSet
+        assertTrue(
+          all.nonEmpty,
+          paid.map(_.id).toSet.subsetOf(allIds),
+          unpaid.map(_.id).toSet.subsetOf(allIds),
+          // paid and unpaid are disjoint partitions of the invoice set
+          paid.map(_.id).toSet.intersect(unpaid.map(_.id).toSet).isEmpty
+        )
     },
     test("services: select-all decodes invoice-sent-o pricelist rows") {
       for services <- CebelcaAPI.services

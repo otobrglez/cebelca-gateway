@@ -6,7 +6,7 @@
 #
 # To regenerate: ./mill schema-gen.generate
 #
-# Generated from git: d1700bb-dirty
+# Generated from git: ceb111e-dirty
 # ─────────────────────────────────────────────────────────────────────────────
 
 schema {
@@ -14,6 +14,14 @@ schema {
 }
 
 scalar Long
+
+enum InvoiceFilter {
+  All
+  Archived
+  Paid
+  PastDue
+  Unpaid
+}
 
 enum PartnerFilter {
   All
@@ -29,6 +37,8 @@ type Invoice {
   title: String!
   dateSent: String!
   payment: String!
+  paid: Boolean!
+  datePaid: String
   lines: [Line!]
 }
 
@@ -46,14 +56,14 @@ type Partner {
   id: Long!
   name: String!
   city: String!
-  invoices(dateFrom: String, dateTo: String): [Invoice!]
+  invoices(filter: InvoiceFilter, dateFrom: String, dateTo: String): [Invoice!]
 }
 
 type Queries {
   partners(ids: [Long!], filter: PartnerFilter, search: String, page: Int): [Partner!]
   partner(id: Long!): Partner
   services: [Service!]
-  invoices(dateFrom: String, dateTo: String): [Invoice!]
+  invoices(filter: InvoiceFilter, dateFrom: String, dateTo: String): [Invoice!]
 }
 
 type Service {

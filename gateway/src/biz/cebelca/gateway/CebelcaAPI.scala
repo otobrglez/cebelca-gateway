@@ -36,8 +36,12 @@ final case class CebelcaAPI private (
     query[Partner](Cmd.selectAllSafe("partner", filter, search, page))
   def partner(id: Long): APITask[Partner] = queryFirst[Partner](Cmd.selectOne("partner", id))
   def invoices: APITask[List[InvoiceHead]]                     = query[InvoiceHead](Cmd.select("invoice-sent"))
-  def invoicesBetween(dateFrom: Option[String], dateTo: Option[String]): APITask[List[InvoiceHead]] =
-    query[InvoiceHead](Cmd.selectAllBy("invoice-sent", dateFrom = dateFrom, dateTo = dateTo))
+  def invoicesBy(
+    filter: String = "all",
+    dateFrom: Option[String] = None,
+    dateTo: Option[String] = None
+  ): APITask[List[InvoiceHead]] =
+    query[InvoiceHead](Cmd.selectAllBy("invoice-sent", filter = filter, dateFrom = dateFrom, dateTo = dateTo))
   def invoiceLines: APITask[List[InvoiceLine]]                 = query[InvoiceLine](Cmd.select("invoice-sent-b"))
   def services: APITask[List[Service]]                         = query[Service](Cmd.select("invoice-sent-o"))
 
@@ -52,7 +56,11 @@ object CebelcaAPI:
   def partnersFiltered(filter: String, search: Option[String] = None, page: Int = -1): APITask[List[Partner]] =
     ZIO.serviceWithZIO[CebelcaAPI](_.partnersFiltered(filter, search, page))
   def invoices: APITask[List[InvoiceHead]]                     = ZIO.serviceWithZIO[CebelcaAPI](_.invoices)
-  def invoicesBetween(dateFrom: Option[String], dateTo: Option[String]): APITask[List[InvoiceHead]] =
-    ZIO.serviceWithZIO[CebelcaAPI](_.invoicesBetween(dateFrom, dateTo))
+  def invoicesBy(
+    filter: String = "all",
+    dateFrom: Option[String] = None,
+    dateTo: Option[String] = None
+  ): APITask[List[InvoiceHead]] =
+    ZIO.serviceWithZIO[CebelcaAPI](_.invoicesBy(filter, dateFrom, dateTo))
   def invoiceLines: APITask[List[InvoiceLine]]                 = ZIO.serviceWithZIO[CebelcaAPI](_.invoiceLines)
   def services: APITask[List[Service]]                         = ZIO.serviceWithZIO[CebelcaAPI](_.services)

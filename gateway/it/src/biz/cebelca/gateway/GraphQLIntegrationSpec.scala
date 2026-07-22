@@ -103,5 +103,36 @@ object GraphQLIntegrationSpec extends GatewaySpecDefault:
         // partner 7 has no 2025 invoices — nested list is empty
         !empty.data.toString.contains("26-0001")
       )
+    },
+    test("invoices(filter: Paid): top-level status filter") {
+      for
+        paid <- run("{ invoices(filter: Paid) { id payment } }")
+        all  <- run("{ invoices(filter: All) { id } }")
+      yield
+        val idOf = "\"id\":(\\d+)".r
+        val paidIds = idOf.findAllMatchIn(paid.data.toString).map(_.group(1)).toSet
+        val allIds  = idOf.findAllMatchIn(all.data.toString).map(_.group(1)).toSet
+        assertTrue(paid.errors.isEmpty, all.errors.isEmpty, allIds.nonEmpty, paidIds.subsetOf(allIds))
+    },
+    test("nested partner.invoices(filter: Paid): status filter works on the nested field") {
+      for res <- run("{ partner(id: 7) { invoices(filter: Paid) { id title } } }")
+      yield
+        // partner 7's paid set includes 26-0002 (paid) and excludes 26-0001 (unpaid)
+        val out = res.data.toString
+        assertTrue(res.errors.isEmpty, out.contains("26-0002"), !out.contains("26-0001"))
+    },
+    test("paid/datePaid reflect real status (not the misleading `payment` terms field)") {
+      for
+        paid   <- run("{ invoices(filter: Paid) { paid datePaid } }")
+        unpaid <- run("{ invoices(filter: Unpaid) { paid datePaid } }")
+      yield assertTrue(
+        paid.errors.isEmpty,
+        unpaid.errors.isEmpty,
+        // every Paid invoice reports paid:true with a date; every Unpaid reports paid:false/null
+        paid.data.toString.contains("\"paid\":true"),
+        !paid.data.toString.contains("\"paid\":false"),
+        unpaid.data.toString.contains("\"paid\":false"),
+        !unpaid.data.toString.contains("\"paid\":true")
+      )
     }
   ).provideShared(layers)

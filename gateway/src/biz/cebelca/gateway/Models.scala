@@ -14,6 +14,18 @@ final case class Partner(
   disabled: Int
 ) derives JsonDecoder
 
+/** Upstream `date_payed` is polymorphic: the integer `0` when unpaid, or a `"YYYY-MM-DD"` string when paid. This
+  * decoder normalises it to `Option[String]` (`None` when unpaid), so it doubles as the authoritative paid signal —
+  * unlike the `payment` field, which is the payment *terms/method*, not the paid status.
+  */
+opaque type PaidDate = Option[String]
+object PaidDate:
+  def value(p: PaidDate): Option[String] = p
+  given JsonDecoder[PaidDate] = JsonDecoder[zio.json.ast.Json].map {
+    case zio.json.ast.Json.Str(s) if s.nonEmpty && s != "0" => Some(s)
+    case _                                                  => None
+  }
+
 final case class InvoiceHead(
   id: Long,
   title: String,
@@ -22,6 +34,7 @@ final case class InvoiceHead(
   date_served: String,
   id_partner: Long,
   payment: String,
+  @jsonField("date_payed") date_payed: PaidDate,
   fiscalized: Option[String]
 ) derives JsonDecoder
 

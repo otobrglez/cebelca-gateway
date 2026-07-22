@@ -44,11 +44,33 @@ final private[graphql] case class PartnersArgs(
   page: Option[Int]
 )
 
-/** Arguments for the top-level `invoices(dateFrom:, dateTo:)` query. Both optional and bound `date_sent`: `dateFrom` is
-  * the inclusive lower bound, `dateTo` the inclusive upper bound; omit either for an open end. Dates are **ISO
-  * `YYYY-MM-DD`** (the format the upstream `select-all-by` expects). Resolved server-side.
+/** Status filter for invoices, mirroring the cebelca UI's `invoices.html?f=…` tabs. Each case maps to the exact
+  * `filter=` value the webapp passes to `invoice-sent select-all-by`, so the server does the (authoritative) selection.
+  * [[wire]] is that value; note the API's own spelling `payed`/`unpayed`.
+  *
+  *   - [[All]]      — every invoice (`all`)
+  *   - [[Paid]]     — paid invoices (`payed`)
+  *   - [[Unpaid]]   — unpaid invoices (`unpayed`)
+  *   - [[PastDue]]  — overdue invoices (`pastdue`)
+  *   - [[Archived]] — archived invoices (`archived`)
   */
-final private[graphql] case class InvoicesArgs(dateFrom: Option[String], dateTo: Option[String])
+enum InvoiceFilter(val wire: String):
+  case All      extends InvoiceFilter("all")
+  case Paid     extends InvoiceFilter("payed")
+  case Unpaid   extends InvoiceFilter("unpayed")
+  case PastDue  extends InvoiceFilter("pastdue")
+  case Archived extends InvoiceFilter("archived")
+
+/** Arguments for the `invoices(filter:, dateFrom:, dateTo:)` query and the nested `partner.invoices(…)` field. All
+  * optional: `filter` is a status tab (defaults to `all` upstream); `dateFrom`/`dateTo` bound `date_sent` (inclusive,
+  * open-ended if omitted). Dates are **ISO `YYYY-MM-DD`** (the format the upstream `select-all-by` expects). All are
+  * resolved server-side.
+  */
+final private[graphql] case class InvoicesArgs(
+  filter: Option[InvoiceFilter],
+  dateFrom: Option[String],
+  dateTo: Option[String]
+)
 
 /** A single line item on an invoice. `lines` on [[Invoice]] is a batched [[ZQuery]] field (see below), so selecting
   * `invoice.lines` across many invoices collapses into one upstream `invoice-sent-b select-all`.
@@ -65,16 +87,23 @@ final private[graphql] case class Line(
 private[graphql] object Line:
   def from(l: gateway.InvoiceLine): Line = Line(l.id, l.title, l.qty, l.mu, l.price, l.vat, l.discount)
 
+/** `payment` is the payment *terms/method* (upstream `payment`), NOT the paid status — do not use it to tell whether an
+  * invoice is settled. `paid` / `datePaid` (derived from upstream `date_payed`) are the authoritative paid signals:
+  * `paid` is true iff a payment date exists, and `datePaid` is that date.
+  */
 final private[graphql] case class Invoice(
   id: Long,
   title: String,
   dateSent: String,
   payment: String,
+  paid: Boolean,
+  datePaid: Option[String],
   lines: ZQuery[CebelcaToken, CebelcaError, List[Line]]
 )
 private[graphql] object Invoice:
   def from(i: gateway.InvoiceHead)(lines: Long => ZQuery[CebelcaToken, CebelcaError, List[Line]]): Invoice =
-    Invoice(i.id, i.title, i.date_sent, i.payment, lines(i.id))
+    val datePaid = gateway.PaidDate.value(i.date_payed)
+    Invoice(i.id, i.title, i.date_sent, i.payment, datePaid.isDefined, datePaid, lines(i.id))
 
 /** `invoices` is a [[ZQuery]] field, not a plain value: when a query selects `partner.invoices` across many partners,
   * caliban merges every such request into one ZQuery, and the DataSource (see GraphQLAPI) batches them into a single
