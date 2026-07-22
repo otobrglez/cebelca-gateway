@@ -4,7 +4,9 @@ The gateway is a [GraphQL API](https://graphql.org/) interface that acts as an o
 
 With sophisticated composition, batching, pipelining, and [ZQuery](https://github.com/zio/zio-query) optimisations, it provides a type-safe and highly performant interface for common interactions with Čebelca.
 
-The gateway is designed to serve all tenants, meaning you only need an API key to interact with it. You can obtain an API key via ["Nastavitve -> API dostop"](https://www.cebelca.biz/manage/access.html)
+The gateway is designed to serve **all tenants**, meaning you only need an API key to interact with it. 
+
+You can obtain an API key via ["Nastavitve -> API dostop"](https://www.cebelca.biz/manage/access.html)
 
 # Production
 
