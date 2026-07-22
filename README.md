@@ -8,9 +8,9 @@ The gateway is designed to serve all tenants, meaning you only need an API key t
 
 # GraphQL Schema
 
-The up-to-date GraphQL schema can be found at the top of this folder: [`schema.graphql`](./schema.graphql). 
+The up-to-date GraphQL schema can be found at the top of this folder: [`schema.graphql`](./schema.graphql). Additional configuration for GraphQL clients is also available via [`graphql.config.yml`](./graphql.config.yml) - i.e. environments and endpoints.
 
-The schema is auto-generated and thus up-to-date with this repository. If manual regeneration is needed use:
+The schema is auto-generated and thus up-to-date with this repository. If manual regeneration is needed, use:
 
 ```bash
 ./mill schema-gen.generate
