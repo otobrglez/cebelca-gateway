@@ -31,10 +31,12 @@ final case class CebelcaAPI private (
     ZIO.serviceWithZIO[CebelcaToken](t => authed(Mw.basicAuth(t.value)).mapZIO(Envelope.first[A](_)).run(cmd))
 
   // ── domain surface (grows as needed) ──
-  def partners: APITask[List[Partner]]         = query[Partner](Cmd.select("partner"))
-  def partner(id: Long): APITask[Partner]      = queryFirst[Partner](Cmd.selectOne("partner", id))
-  def invoices: APITask[List[InvoiceHead]]     = query[InvoiceHead](Cmd.select("invoice-sent"))
-  def invoiceLines: APITask[List[InvoiceLine]] = query[InvoiceLine](Cmd.select("invoice-sent-b"))
+  def partners: APITask[List[Partner]]    = query[Partner](Cmd.select("partner"))
+  def partnersFiltered(filter: String, search: Option[String] = None): APITask[List[Partner]] =
+    query[Partner](Cmd.selectAllSafe("partner", filter, search))
+  def partner(id: Long): APITask[Partner] = queryFirst[Partner](Cmd.selectOne("partner", id))
+  def invoices: APITask[List[InvoiceHead]]                     = query[InvoiceHead](Cmd.select("invoice-sent"))
+  def invoiceLines: APITask[List[InvoiceLine]]                 = query[InvoiceLine](Cmd.select("invoice-sent-b"))
 
 object CebelcaAPI:
   private type APITask[+A] = ZIO[CebelcaAPI & CebelcaToken, CebelcaError, A]
@@ -43,6 +45,8 @@ object CebelcaAPI:
   def make: URIO[Client, CebelcaAPI]            = ZIO.serviceWith[Client](CebelcaAPI(_, Backend(baseUrl)))
   val live: ZLayer[Client, Nothing, CebelcaAPI] = ZLayer.fromZIO(make)
 
-  def partners: APITask[List[Partner]]         = ZIO.serviceWithZIO[CebelcaAPI](_.partners)
-  def invoices: APITask[List[InvoiceHead]]     = ZIO.serviceWithZIO[CebelcaAPI](_.invoices)
-  def invoiceLines: APITask[List[InvoiceLine]] = ZIO.serviceWithZIO[CebelcaAPI](_.invoiceLines)
+  def partners: APITask[List[Partner]] = ZIO.serviceWithZIO[CebelcaAPI](_.partners)
+  def partnersFiltered(filter: String, search: Option[String] = None): APITask[List[Partner]] =
+    ZIO.serviceWithZIO[CebelcaAPI](_.partnersFiltered(filter, search))
+  def invoices: APITask[List[InvoiceHead]]                     = ZIO.serviceWithZIO[CebelcaAPI](_.invoices)
+  def invoiceLines: APITask[List[InvoiceLine]]                 = ZIO.serviceWithZIO[CebelcaAPI](_.invoiceLines)

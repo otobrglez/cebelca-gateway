@@ -15,8 +15,15 @@ final case class Cmd private (
   def withArgs(kvs: (String, String)*): Cmd = copy(args = args ++ kvs.toMap)
 
 object Cmd:
-  def select(resource: String): Cmd                          = Cmd(resource, "select-all")
-  def selectOne(resource: String, id: Long): Cmd             = Cmd(resource, "select-one", Map("id" -> id.toString))
+  def select(resource: String): Cmd              = Cmd(resource, "select-all")
+  def selectOne(resource: String, id: Long): Cmd = Cmd(resource, "select-one", Map("id" -> id.toString))
+
+  def selectAllSafe(resource: String, filter: String, search: Option[String] = None): Cmd =
+    Cmd(
+      resource,
+      "select-all-safe",
+      Map("filter" -> filter, "page" -> "-1") ++ search.filter(_.nonEmpty).map("search" -> _)
+    )
   def insert(resource: String, args: (String, String)*): Cmd = Cmd(resource, "insert-into", args.toMap)
   def exploreResources: Cmd                                  = Cmd("", "", explore = true)
   def exploreMethods(resource: String): Cmd                  = Cmd(resource, "", explore = true)

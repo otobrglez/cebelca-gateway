@@ -12,9 +12,11 @@ object BackendTest extends GatewaySpecDefault:
     val resource = Gen.fromIterable(List("invoice", "partner", "document"))
     val id       = Gen.long(1, 1000)
     val args     = Gen.listOf(Gen.fromIterable(List("arg1" -> "value1", "arg2" -> "value2"))).map(_.distinct)
+    val filter   = Gen.fromIterable(List("all", "wsent", "debtors", "pasive", "disabled", "last"))
     Gen.oneOf(
       resource.map(Cmd.select),
       resource.zip(id).map(Cmd.selectOne),
+      resource.zip(filter).map((r, f) => Cmd.selectAllSafe(r, f)),
       resource.zip(args).map((r, kvs) => Cmd.insert(r, kvs*)),
       Gen.const(Cmd.exploreResources),
       resource.map(Cmd.exploreMethods)

@@ -30,6 +30,33 @@ object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
         api   <- ZIO.service[CebelcaAPI]
         items <- api.query[Item](Cmd.select("item"))
       yield assertTrue(items.forall(_.price >= 0))
+    },
+    test("partnersFiltered(debtors): server-side filter returns a subset of all partners") {
+      for
+        all     <- CebelcaAPI.partnersFiltered("all")
+        debtors <- CebelcaAPI.partnersFiltered("debtors")
+      yield
+        val allIds     = all.map(_.id).toSet
+        val debtorIds  = debtors.map(_.id).toSet
+        assertTrue(
+          all.nonEmpty,
+          // the server does the debt selection: debtors are strictly a subset of all
+          debtorIds.subsetOf(allIds),
+          debtors.size <= all.size
+        )
+    },
+    test("partnersFiltered(search): case-insensitive substring match on name, server-side") {
+      for
+        all      <- CebelcaAPI.partnersFiltered("all")
+        matched  <- CebelcaAPI.partnersFiltered("all", Some("demo"))
+        upper    <- CebelcaAPI.partnersFiltered("all", Some("DEMO"))
+      yield assertTrue(
+        matched.nonEmpty,
+        matched.size < all.size,
+        matched.forall(_.name.toLowerCase.contains("demo")),
+        // case-insensitive: "demo" and "DEMO" return the same rows
+        matched.map(_.id).toSet == upper.map(_.id).toSet
+      )
     }
     /*
     test("validation error: empty invoice insert surfaces CebelcaError.Validation") {

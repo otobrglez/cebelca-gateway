@@ -11,26 +11,36 @@ private[graphql] type PartnerID = Long
   */
 final private[graphql] case class PartnerArgs(id: PartnerID)
 
-/** Kind-of-partner filter, mirroring the cebelca UI's `contacts.html?f=…` tabs. The real filter lives only on the
-  * session-authenticated UI backend (`partner select-all-safe&filter=…`), which this gateway does not use — so these
-  * are **best-effort approximations** computed in memory over public-API data (partners + invoices):
+/** Kind-of-partner filter, mirroring the cebelca UI's `contacts.html?f=…` tabs. Each case maps to the exact `filter=`
+  * value the webapp passes to `partner select-all-safe`, so the server does the (authoritative) selection — the same
+  * call the UI's "Dolžniki" button makes. [[wire]] is that value; note the API's own spelling `pasive` (one 's').
   *
-  *   - [[All]]      — every non-disabled partner (UI also hides the warehouse pseudo-partner; we can't detect that)
-  *   - [[WithSent]] — partners that have at least one sent invoice
-  *   - [[Debtors]]  — partners with at least one unpaid invoice (`payment != "paid"`)
-  *   - [[Passive]]  — partners with no invoices at all
-  *   - [[Disabled]] — partners flagged `disabled`
-  *   - [[Last]]     — UI orders by recency only; we can't replicate that, so this behaves like [[All]]
+  *   - [[All]]      — every partner (`all`)
+  *   - [[WithSent]] — partners that have at least one sent invoice (`wsent`)
+  *   - [[Debtors]]  — partners the server considers in debt (`debtors`)
+  *   - [[Passive]]  — passive partners (`pasive`)
+  *   - [[Disabled]] — hidden/disabled partners (`disabled`)
+  *   - [[Last]]     — recently used partners (`last`)
   */
-enum PartnerFilter:
-  case All, WithSent, Debtors, Passive, Disabled, Last
+enum PartnerFilter(val wire: String):
+  case All      extends PartnerFilter("all")
+  case WithSent extends PartnerFilter("wsent")
+  case Debtors  extends PartnerFilter("debtors")
+  case Passive  extends PartnerFilter("pasive")
+  case Disabled extends PartnerFilter("disabled")
+  case Last     extends PartnerFilter("last")
 
-/** Arguments for the `partners(ids:, filter:)` query. Both are optional and combine (AND): omit `ids` (or pass an
-  * empty list) to match every id; omit `filter` to apply no kind-of filter. Upstream has no batch-by-id or usable
-  * filter method on the public API, so the resolver fetches all partners in one `select-all` call (plus invoices when
-  * the chosen filter needs them) and filters in memory.
+/** Arguments for the `partners(ids:, filter:, search:)` query. All optional and combine (AND): omit `ids` (or pass an
+  * empty list) to match every id; omit `filter` to apply no kind-of filter (defaults to `all` upstream); `search` is a
+  * case-insensitive substring match on the partner name. The kind-of filter and `search` are both resolved server-side
+  * via `partner select-all-safe&filter=…&search=…` (the same call the UI's tab + search box make); `ids`, which has no
+  * upstream batch method, is intersected in memory over the returned rows.
   */
-final private[graphql] case class PartnersArgs(ids: Option[List[PartnerID]], filter: Option[PartnerFilter])
+final private[graphql] case class PartnersArgs(
+  ids: Option[List[PartnerID]],
+  filter: Option[PartnerFilter],
+  search: Option[String]
+)
 
 /** A single line item on an invoice. `lines` on [[Invoice]] is a batched [[ZQuery]] field (see below), so selecting
   * `invoice.lines` across many invoices collapses into one upstream `invoice-sent-b select-all`.

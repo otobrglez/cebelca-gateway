@@ -41,8 +41,34 @@ object GraphQLIntegrationSpec extends GatewaySpecDefault:
           out.contains("26-0001")
         )
     },
-    test("nested lookup: partner(value:7) { invoices } has invoices") {
-      for res <- run("{ partner(value: 7) { name invoices { title } } }")
+    test("nested lookup: partner(id:7) { invoices } has invoices") {
+      for res <- run("{ partner(id: 7) { name invoices { title } } }")
       yield assertTrue(res.errors.isEmpty, res.data.toString.contains("26-0001"))
+    },
+    test("filter: Debtors delegates to the server and is a subset of All") {
+      for
+        all     <- run("{ partners(filter: All) { id } }")
+        debtors <- run("{ partners(filter: Debtors) { id name } }")
+      yield
+        val idOf = "\"id\":(\\d+)".r
+        val allIds     = idOf.findAllMatchIn(all.data.toString).map(_.group(1)).toSet
+        val debtorIds  = idOf.findAllMatchIn(debtors.data.toString).map(_.group(1)).toSet
+        assertTrue(
+          all.errors.isEmpty,
+          debtors.errors.isEmpty,
+          allIds.nonEmpty,
+          debtorIds.subsetOf(allIds)
+        )
+    },
+    test("search: matches partner names server-side") {
+      for res <- run("""{ partners(search: "demo") { id name } }""")
+      yield
+        val out = res.data.toString
+        assertTrue(
+          res.errors.isEmpty,
+          out.contains("Demo Company"),
+          // "Kaldi" doesn't match "demo" — the server excludes it
+          !out.contains("Kaldi")
+        )
     }
   ).provideShared(layers)

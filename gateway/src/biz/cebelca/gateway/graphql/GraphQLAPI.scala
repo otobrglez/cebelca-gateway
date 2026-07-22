@@ -33,48 +33,16 @@ object GraphQLAPI:
       case None      => _ => true
       case Some(set) => val wanted = set.toSet; p => wanted.contains(p.id)
 
-  /** True when the filter is one whose predicate depends on invoice data (and so needs the extra upstream fetch). */
-  private def needsInvoices(f: graphql.PartnerFilter): Boolean =
-    f match
-      case graphql.PartnerFilter.WithSent | graphql.PartnerFilter.Debtors | graphql.PartnerFilter.Passive => true
-      case _                                                                                              => false
-
-  /** Build the kind-of-partner predicate. See [[graphql.PartnerFilter]] for the (approximate) semantics. Invoice-based
-    * filters receive the partner-id sets precomputed from `invoices`; id-only filters ignore them.
-    */
-  private def keepByFilter(
-    filter: Option[graphql.PartnerFilter],
-    withInvoices: Set[Long],
-    debtors: Set[Long]
-  ): biz.cebelca.gateway.Partner => Boolean =
-    import graphql.PartnerFilter.*
-    filter match
-      case None | Some(All) | Some(Last) => p => p.disabled == 0
-      case Some(Disabled)                => p => p.disabled != 0
-      case Some(WithSent)                => p => withInvoices.contains(p.id)
-      case Some(Debtors)                 => p => debtors.contains(p.id)
-      case Some(Passive)                 => p => p.disabled == 0 && !withInvoices.contains(p.id)
-
-  /** Resolve the `partners` list: one `select-all` for partners, plus (only when the chosen filter needs it) one
-    * `invoice-sent select-all` to derive the with-invoices / debtor id sets. Both id and kind filters apply in memory.
+  /** Resolve the `partners` list. The kind-of filter and name `search` are delegated to the server via
+    * `partner select-all-safe&filter=…&search=…` (the same authoritative call the UI's tabs + search box make — no
+    * in-memory approximation). `ids`, which has no upstream batch method, is intersected in memory over the rows.
     */
   private def selectPartners(api: CebelcaAPI)(args: PartnersArgs): RIO[CebelcaToken, List[graphql.Partner]] =
-    val invoiceSets: ZIO[CebelcaToken, CebelcaError, (Set[Long], Set[Long])] =
-      if args.filter.exists(needsInvoices) then
-        api.invoices.map { invs =>
-          val withInvoices = invs.map(_.id_partner).toSet
-          val debtors      = invs.filter(_.payment != "paid").map(_.id_partner).toSet
-          (withInvoices, debtors)
-        }
-      else ZIO.succeed((Set.empty, Set.empty))
-
-    (for
-      partners                 <- api.partners
-      (withInvoices, debtors) <- invoiceSets
-    yield partners
-      .filter(keepById(args.ids))
-      .filter(keepByFilter(args.filter, withInvoices, debtors))
-      .map(toPartner(api))).mapError(sanitizeError)
+    val filter = args.filter.getOrElse(graphql.PartnerFilter.All).wire
+    api
+      .partnersFiltered(filter, args.search)
+      .map(_.filter(keepById(args.ids)).map(toPartner(api)))
+      .mapError(sanitizeError)
 
   private case class InvoicesForPartner(partnerId: Long) extends Request[CebelcaError, List[graphql.Invoice]]
   private case class LinesForInvoice(invoiceId: Long)    extends Request[CebelcaError, List[graphql.Line]]
