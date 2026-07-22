@@ -11,7 +11,8 @@ import caliban.schema.ArgBuilder.auto.*
 final case class Queries(
   partners: PartnersArgs => RIO[CebelcaToken, List[graphql.Partner]],
   partner: PartnerArgs => RIO[CebelcaToken, graphql.Partner],
-  services: RIO[CebelcaToken, List[graphql.Service]]
+  services: RIO[CebelcaToken, List[graphql.Service]],
+  invoices: InvoicesArgs => RIO[CebelcaToken, List[graphql.Invoice]]
 )
 
 object GraphQLAPI:
@@ -21,6 +22,7 @@ object GraphQLAPI:
   private given Schema[Any, graphql.PartnerFilter]    = Schema.gen
   private given Schema[Any, graphql.PartnerArgs]      = Schema.gen
   private given Schema[Any, graphql.PartnersArgs]     = Schema.gen
+  private given Schema[Any, graphql.InvoicesArgs]     = Schema.gen
   private given Schema[Any, graphql.Line]             = Schema.gen
   private given Schema[Any, graphql.Service]          = Schema.gen
   private given Schema[CebelcaToken, graphql.Invoice] = Schema.gen
@@ -42,21 +44,33 @@ object GraphQLAPI:
   private def selectPartners(api: CebelcaAPI)(args: PartnersArgs): RIO[CebelcaToken, List[graphql.Partner]] =
     val filter = args.filter.getOrElse(graphql.PartnerFilter.All).wire
     api
-      .partnersFiltered(filter, args.search)
+      .partnersFiltered(filter, args.search, args.page.getOrElse(-1))
       .map(_.filter(keepById(args.ids)).map(toPartner(api)))
       .mapError(sanitizeError)
 
-  private case class InvoicesForPartner(partnerId: Long) extends Request[CebelcaError, List[graphql.Invoice]]
-  private case class LinesForInvoice(invoiceId: Long)    extends Request[CebelcaError, List[graphql.Line]]
+  private case class InvoicesForPartner(partnerId: Long, dateFrom: Option[String], dateTo: Option[String])
+      extends Request[CebelcaError, List[graphql.Invoice]]
+  private case class LinesForInvoice(invoiceId: Long) extends Request[CebelcaError, List[graphql.Line]]
 
+  /** Batches `partner.invoices` fetches. Requests are grouped by their date window (`dateFrom`/`dateTo`): each distinct
+    * window costs one upstream `select-all-by` call, whose rows are then partitioned by partner. So `{ partners {
+    * invoices } }` (all one window) stays a single call, while different windows on different partners each get their own.
+    */
   private def invoicesDataSource(api: CebelcaAPI): DataSource[CebelcaToken, InvoicesForPartner] =
     DataSource.fromFunctionBatchedZIO[CebelcaToken, CebelcaError, InvoicesForPartner, List[graphql.Invoice]](
       "invoices-by-partner"
     ) { reqs =>
-      api.invoices.map { all =>
-        val byPartner = all.groupBy(_.id_partner)
-        reqs.map(r => byPartner.getOrElse(r.partnerId, Nil).map(graphql.Invoice.from(_)(linesOf(api))))
-      }
+      ZIO
+        .foreachPar(reqs.groupBy(r => (r.dateFrom, r.dateTo)).toList) { case ((from, to), group) =>
+          api.invoicesBetween(from, to).map(rows => (group, rows.groupBy(_.id_partner)))
+        }
+        .map { grouped =>
+          // reassemble results in the original request order
+          val byRequest = grouped.flatMap { (group, byPartner) =>
+            group.map(r => r -> byPartner.getOrElse(r.partnerId, Nil).map(graphql.Invoice.from(_)(linesOf(api))))
+          }.toMap
+          reqs.map(byRequest)
+        }
     }
 
   private def linesDataSource(api: CebelcaAPI): DataSource[CebelcaToken, LinesForInvoice] =
@@ -77,7 +91,7 @@ object GraphQLAPI:
       id = p.id,
       name = p.name,
       city = p.city,
-      invoices = ZQuery.fromRequest(InvoicesForPartner(p.id))(invoicesDataSource(api))
+      invoices = args => ZQuery.fromRequest(InvoicesForPartner(p.id, args.dateFrom, args.dateTo))(invoicesDataSource(api))
     )
 
   def make(api: CebelcaAPI): GraphQL[CebelcaToken] =
@@ -85,7 +99,11 @@ object GraphQLAPI:
       Queries(
         partners = selectPartners(api),
         partner = args => api.partner(args.id).mapBoth(sanitizeError, toPartner(api)),
-        services = api.services.mapBoth(sanitizeError, _.map(graphql.Service.from))
+        services = api.services.mapBoth(sanitizeError, _.map(graphql.Service.from)),
+        invoices = args =>
+          api
+            .invoicesBetween(args.dateFrom, args.dateTo)
+            .mapBoth(sanitizeError, _.map(graphql.Invoice.from(_)(linesOf(api))))
       )
     )
     graphQL(resolver)

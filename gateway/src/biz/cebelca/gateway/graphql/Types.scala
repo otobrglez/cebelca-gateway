@@ -30,17 +30,25 @@ enum PartnerFilter(val wire: String):
   case Disabled extends PartnerFilter("disabled")
   case Last     extends PartnerFilter("last")
 
-/** Arguments for the `partners(ids:, filter:, search:)` query. All optional and combine (AND): omit `ids` (or pass an
-  * empty list) to match every id; omit `filter` to apply no kind-of filter (defaults to `all` upstream); `search` is a
-  * case-insensitive substring match on the partner name. The kind-of filter and `search` are both resolved server-side
-  * via `partner select-all-safe&filter=…&search=…` (the same call the UI's tab + search box make); `ids`, which has no
-  * upstream batch method, is intersected in memory over the returned rows.
+/** Arguments for the `partners(ids:, filter:, search:, page:)` query. All optional and combine (AND): omit `ids` (or
+  * pass an empty list) to match every id; omit `filter` to apply no kind-of filter (defaults to `all` upstream);
+  * `search` is a case-insensitive substring match on the partner name; `page` selects a page (default/omitted = `-1`,
+  * i.e. all pages unpaged). Filter, search and page are all resolved server-side via
+  * `partner select-all-safe&filter=…&search=…&page=…` (the same call the UI's tab + search box make); `ids`, which has
+  * no upstream batch method, is intersected in memory over the returned rows.
   */
 final private[graphql] case class PartnersArgs(
   ids: Option[List[PartnerID]],
   filter: Option[PartnerFilter],
-  search: Option[String]
+  search: Option[String],
+  page: Option[Int]
 )
+
+/** Arguments for the top-level `invoices(dateFrom:, dateTo:)` query. Both optional and bound `date_sent`: `dateFrom` is
+  * the inclusive lower bound, `dateTo` the inclusive upper bound; omit either for an open end. Dates are **ISO
+  * `YYYY-MM-DD`** (the format the upstream `select-all-by` expects). Resolved server-side.
+  */
+final private[graphql] case class InvoicesArgs(dateFrom: Option[String], dateTo: Option[String])
 
 /** A single line item on an invoice. `lines` on [[Invoice]] is a batched [[ZQuery]] field (see below), so selecting
   * `invoice.lines` across many invoices collapses into one upstream `invoice-sent-b select-all`.
@@ -77,7 +85,7 @@ final private[graphql] case class Partner(
   id: Long,
   name: String,
   city: String,
-  invoices: ZQuery[CebelcaToken, CebelcaError, List[Invoice]]
+  invoices: InvoicesArgs => ZQuery[CebelcaToken, CebelcaError, List[Invoice]]
 )
 
 /** A service / pricelist entry, mirroring the UI's "Storitve" page. Sourced from the `invoice-sent-o` resource;

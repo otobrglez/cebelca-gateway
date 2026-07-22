@@ -6,7 +6,7 @@
 #
 # To regenerate: ./mill schema-gen.generate
 #
-# Generated from git: 02f46b8
+# Generated from git: d1700bb-dirty
 # ─────────────────────────────────────────────────────────────────────────────
 
 schema {
@@ -46,13 +46,14 @@ type Partner {
   id: Long!
   name: String!
   city: String!
-  invoices: [Invoice!]
+  invoices(dateFrom: String, dateTo: String): [Invoice!]
 }
 
 type Queries {
-  partners(ids: [Long!], filter: PartnerFilter, search: String): [Partner!]
+  partners(ids: [Long!], filter: PartnerFilter, search: String, page: Int): [Partner!]
   partner(id: Long!): Partner
   services: [Service!]
+  invoices(dateFrom: String, dateTo: String): [Invoice!]
 }
 
 type Service {

@@ -18,11 +18,33 @@ object Cmd:
   def select(resource: String): Cmd              = Cmd(resource, "select-all")
   def selectOne(resource: String, id: Long): Cmd = Cmd(resource, "select-one", Map("id" -> id.toString))
 
-  def selectAllSafe(resource: String, filter: String, search: Option[String] = None): Cmd =
+  /** `page = -1` returns every page (unpaged); a non-negative value selects that page. The method requires `page`,
+    * rejecting its absence with a `page: required` validation error.
+    */
+  def selectAllSafe(resource: String, filter: String, search: Option[String] = None, page: Int = -1): Cmd =
     Cmd(
       resource,
       "select-all-safe",
-      Map("filter" -> filter, "page" -> "-1") ++ search.filter(_.nonEmpty).map("search" -> _)
+      Map("filter" -> filter, "page" -> page.toString) ++ search.filter(_.nonEmpty).map("search" -> _)
+    )
+  /** Filtered/date-bounded select, as used by the invoices list. Requires `filter`, `company`, `page`; `datefrom` /
+    * `dateto` are optional bounds on `date_sent`, in **ISO `YYYY-MM-DD`** (note: not the SI `DD.MM.YYYY` used by
+    * inserts). `page = -1` returns every page; `company = 0` = all companies.
+    */
+  def selectAllBy(
+    resource: String,
+    filter: String = "all",
+    company: Long = 0,
+    page: Int = -1,
+    dateFrom: Option[String] = None,
+    dateTo: Option[String] = None
+  ): Cmd =
+    Cmd(
+      resource,
+      "select-all-by",
+      Map("filter" -> filter, "company" -> company.toString, "page" -> page.toString)
+        ++ dateFrom.filter(_.nonEmpty).map("datefrom" -> _)
+        ++ dateTo.filter(_.nonEmpty).map("dateto" -> _)
     )
   def insert(resource: String, args: (String, String)*): Cmd = Cmd(resource, "insert-into", args.toMap)
   def exploreResources: Cmd                                  = Cmd("", "", explore = true)

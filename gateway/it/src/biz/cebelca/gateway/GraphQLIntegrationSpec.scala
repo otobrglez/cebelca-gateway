@@ -77,5 +77,31 @@ object GraphQLIntegrationSpec extends GatewaySpecDefault:
         res.errors.isEmpty,
         res.data.toString.contains("Management and development")
       )
+    },
+    test("invoices(dateFrom, dateTo): date range filters server-side") {
+      for
+        inRange <- run("""{ invoices(dateFrom: "2026-07-20", dateTo: "2026-07-20") { id title } }""")
+        empty   <- run("""{ invoices(dateFrom: "2025-01-01", dateTo: "2025-12-31") { id } }""")
+      yield
+        val idOf = "\"id\":(\\d+)".r
+        assertTrue(
+          inRange.errors.isEmpty,
+          empty.errors.isEmpty,
+          inRange.data.toString.contains("26-0001"),
+          // outside the window: no rows
+          idOf.findFirstIn(empty.data.toString).isEmpty
+        )
+    },
+    test("nested partner.invoices(dateFrom, dateTo): date range filters the nested field") {
+      for
+        inRange <- run("""{ partner(id: 7) { invoices(dateFrom: "2026-07-20", dateTo: "2026-07-20") { title } } }""")
+        empty   <- run("""{ partner(id: 7) { invoices(dateFrom: "2025-01-01", dateTo: "2025-12-31") { title } } }""")
+      yield assertTrue(
+        inRange.errors.isEmpty,
+        empty.errors.isEmpty,
+        inRange.data.toString.contains("26-0001"),
+        // partner 7 has no 2025 invoices — nested list is empty
+        !empty.data.toString.contains("26-0001")
+      )
     }
   ).provideShared(layers)

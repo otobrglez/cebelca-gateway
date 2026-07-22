@@ -17,6 +17,7 @@ object BackendTest extends GatewaySpecDefault:
       resource.map(Cmd.select),
       resource.zip(id).map(Cmd.selectOne),
       resource.zip(filter).map((r, f) => Cmd.selectAllSafe(r, f)),
+      resource.map(r => Cmd.selectAllBy(r, dateFrom = Some("2026-01-01"), dateTo = Some("2026-12-31"))),
       resource.zip(args).map((r, kvs) => Cmd.insert(r, kvs*)),
       Gen.const(Cmd.exploreResources),
       resource.map(Cmd.exploreMethods)
