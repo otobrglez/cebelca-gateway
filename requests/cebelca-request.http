@@ -1,0 +1,202 @@
+### Cebelca.biz API — playground
+### Env vars come from http-client.private.env.json (select "production" in IntelliJ).
+### Public API auth = HTTP Basic, api_key as user + literal "x" as pass.
+### IntelliJ shorthand: `Authorization: Basic {{api_key}} x` (two tokens → user/pass).
+
+@host = https://www.cebelca.biz
+@api = {{host}}/API
+
+### =====================================================================
+### EXPLORE MODE (_x=1) — discover resources, methods, args
+### =====================================================================
+
+### List all resources
+POST {{api}}?_x=1
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+### List methods of a resource
+POST {{api}}?_r=invoice-sent&_x=1
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+### List required args of a method
+POST {{api}}?_r=invoice-sent&_m=insert-into&_x=1
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+### =====================================================================
+### PARTNERS (contacts / customers)
+### =====================================================================
+
+### All partners
+POST {{api}}?_r=partner&_m=select-all
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+### One partner by id
+POST {{api}}?_r=partner&_m=select-one
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+id=7
+
+### Find-or-create partner (idempotent) — captures id into {{partner_id}}
+POST {{api}}?_r=partner&_m=assure
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+name=My Test Company&street=Downing street 10&postal=E1w201&city=London
+
+> {%
+    client.global.set("partner_id", response.body[0][0].id);
+%}
+
+### =====================================================================
+### ITEMS / SERVICES (pricelist)
+### =====================================================================
+
+### All items/services
+POST {{api}}?_r=item&_m=select-all
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+### Item by code
+POST {{api}}?_r=item&_m=select-by-code
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+code=A101
+
+### =====================================================================
+### INVOICES (sent) — heads, lines, payments
+### =====================================================================
+
+### All invoice heads
+POST {{api}}?_r=invoice-sent&_m=select-all
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+### Next invoice title/number
+POST {{api}}?_r=invoice-sent&_m=select-next-title
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+### Invoice line items (bodies)
+POST {{api}}?_r=invoice-sent-b&_m=select-all
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+### Invoice items/services on bodies (joined)
+POST {{api}}?_r=invoice-sent-o&_m=select-all-w-items
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+### Invoice payments
+POST {{api}}?_r=invoice-sent-p&_m=select-all
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+### --- WRITE: empty insert → 403 validation error (shows required fields) ---
+POST {{api}}?_r=invoice-sent&_m=insert-into
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+### --- WRITE: create invoice head (dates are DD.MM.YYYY) → captures {{invoice_id}} ---
+POST {{api}}?_r=invoice-sent&_m=insert-into
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+date_sent=21.07.2026&date_to_pay=31.07.2026&date_served=21.07.2026&id_partner={{partner_id}}
+
+> {%
+    client.global.set("invoice_id", response.body[0][0].id);
+%}
+
+### --- WRITE: add a line item to that invoice ---
+POST {{api}}?_r=invoice-sent-b&_m=insert-into
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+title=Programiranje&qty=10&mu=kos&price=120&vat=22&discount=0&id_invoice_sent={{invoice_id}}
+
+### --- WRITE: record a payment ---
+POST {{api}}?_r=invoice-sent-p&_m=insert-into
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+date_of=21.07.2026&amount=120&id_payment_method=1&id_invoice_sent={{invoice_id}}
+
+### --- WRITE: finalize invoice WITHOUT fiscal (non-cash) ---
+POST {{api}}?_r=invoice-sent&_m=finalize-invoice-2015
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+id={{invoice_id}}
+
+### --- WRITE: finalize invoice WITH FURS fiscalization ---
+POST {{api}}?_r=invoice-sent&_m=finalize-invoice
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+id={{invoice_id}}
+
+### Fiscal info (ZOI/EOR) for an invoice
+POST {{api}}?_r=invoice-sent&_m=get-fiscal-info
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+id={{invoice_id}}
+
+### Invoice PDF (separate endpoint, GET)
+GET {{host}}/API-pdf?id={{invoice_id}}&format=PDF&res=invoice-sent&lang=si&disposition=inline&preview=0
+Authorization: Basic {{api_key}} x
+
+### =====================================================================
+### PROFORMA / ESTIMATES
+### =====================================================================
+
+### All proforma heads
+POST {{api}}?_r=preinvoice&_m=select-all
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+### Proforma line items
+POST {{api}}?_r=preinvoice-b&_m=select-all
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+### =====================================================================
+### STATISTICS
+### =====================================================================
+
+### Top customers for a year
+POST {{api}}?_r=stat&_m=top-customers
+Authorization: Basic {{api_key}} x
+Content-Type: application/x-www-form-urlencoded
+
+year=2026&page=-1
+
+### =====================================================================
+### UI BACKEND (session cookie) — for resources NOT on the public API
+### Run "UI: login" first; IntelliJ persists the RSPSID cookie automatically.
+### =====================================================================
+
+### UI: seed session cookie
+GET {{host}}/manage/sign-in.html
+
+### UI: login (POST form fields email / password / sign-in)
+POST {{host}}/manage/sign-in.html
+Content-Type: application/x-www-form-urlencoded
+
+email={{user}}&password={{pass}}&sign-in=Vstopite
+
+### UI: company profile (my-company — 404 on public API)
+POST {{host}}/manage/DR-srv-pl.html?_r=my-company&_m=select-all
+Content-Type: application/x-www-form-urlencoded
+
+### UI: invoice with joined line items (same protocol, session auth)
+POST {{host}}/manage/DR-srv.html?_r=invoice-sent-o&_m=select-all-w-items
+Content-Type: application/x-www-form-urlencoded
+
+###

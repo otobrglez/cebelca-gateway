@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: boo-prod
+  labels: { app: keycloak }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: keycloak } }
+  template:
+    metadata: { labels: { app: keycloak } }
+    spec:
+      containers:
+        - name: keycloak
+          image: registry.folk-decibel.ts.net/boo-run/keycloak
+          ports: [ { containerPort: 8080 } ]
+          args: [
+            "start",
+            "--metrics-enabled=true",
+            "--proxy-headers=xforwarded",
+            "--hostname-strict=true",
+            "--http-enabled=true",
+            "--hostname-debug=true",
+            "--health-enabled=true",
+          ]
+
+          env:
+            - { name: KEYCLOAK_LOGLEVEL, value: "INFO" }
+            - { name: KC_DB, value: "postgres" }
+            - { name: KC_HOSTNAME, value: "authentication.boo.run" }
+            - name: KEYCLOAK_ADMIN
+              valueFrom: { secretKeyRef: { name: keycloak-secret, key: keycloak_admin } }
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: keycloak-secret, key: keycloak_admin_password } }
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              valueFrom: { secretKeyRef: { name: keycloak-secret, key: keycloak_admin } }
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: keycloak-secret, key: keycloak_admin_password } }
+            - name: KC_DB_URL
+              valueFrom: { secretKeyRef: { name: keycloak-secret, key: kc_db_url } }
+            - name: KC_DB_USERNAME
+              valueFrom: { secretKeyRef: { name: keycloak-secret, key: kc_db_username } }
+            - name: KC_DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: keycloak-secret, key: kc_db_password } }
+            - name: KC_HTTP_CORS_ORIGINS
+              value: "https://boo.run"
+            - name: KC_HTTP_CORS_METHODS
+              value: "GET,POST,PUT,DELETE,OPTIONS"
+            - name: KC_FEATURES
+              value: "token-exchange,admin-fine-grained-authz,identity-brokering-api:v2"
+            - name: KC_FEATURES_DISABLED
+              value: "token-exchange-standard"
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 9000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: boo-prod
+spec:
+  selector: { app: keycloak }
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak-ingress
+  namespace: boo-prod
+  labels: { version: "1" }
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: authentication.boo.run
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port: { number: 80 }

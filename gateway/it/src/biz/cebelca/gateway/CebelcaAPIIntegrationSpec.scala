@@ -1,0 +1,47 @@
+package biz.cebelca.gateway
+
+import biz.cebelca.gateway.testkit.GatewaySpecDefault
+import zio.*
+import zio.http.*
+import zio.test.*
+import zio.test.Assertion.*
+
+object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
+  private val layers =
+    UserCredentials.liveFromEnvironment ++ Client.default >>> CebelcaAPI.live ++ CebelcaToken.fromEnv
+
+  def spec = suite("CebelcaAPI (live)")(
+    test("partners: select-all returns decoded rows") {
+      for partners <- CebelcaAPI.partners
+      yield assertTrue(partners.nonEmpty)
+    },
+    test("invoices: select-all returns decoded heads") {
+      for invoices <- CebelcaAPI.invoices
+      yield assertTrue(invoices.forall(_.id_partner >= 0))
+    },
+    test("explore mode lists resources") {
+      for
+        api  <- ZIO.service[CebelcaAPI]
+        rows <- api.query[ExploreEntry](Cmd.exploreResources)
+      yield assertTrue(rows.exists(_.name == "invoice-sent"), rows.exists(_.name == "partner"))
+    },
+    test("items: select-all decodes into Item") {
+      for
+        api   <- ZIO.service[CebelcaAPI]
+        items <- api.query[Item](Cmd.select("item"))
+      yield assertTrue(items.forall(_.price >= 0))
+    }
+    /*
+    test("validation error: empty invoice insert surfaces CebelcaError.Validation") {
+      for
+        api    <- ZIO.service[CebelcaAPI]
+        result <- api.query[InvoiceHead](Cmd.select(resource = "invoice-sent", method = "insert-into")).exit
+      yield assert(result)(
+        fails(isSubtype[CebelcaError.Validation](hasField("fields", _.fields, isNonEmpty)))
+      )
+    }
+     */
+  ).provideShared(layers)
+
+  // Minimal decoder for explore-mode rows. Some descriptions are null.
+  final case class ExploreEntry(name: String, description: Option[String]) derives zio.json.JsonDecoder

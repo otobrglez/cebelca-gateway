@@ -1,0 +1,26 @@
+*-one-config
+
+target/
+
+.idea/
+.bsp/
+
+.envrc
+.playwright-mcp/
+
+
+.metals/
+
+out/
+
+# Devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml
+/requests/http-client.private.env.json

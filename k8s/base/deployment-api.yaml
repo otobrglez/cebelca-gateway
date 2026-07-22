@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: boo-prod
+data:
+  APP_LOG_LEVEL: "INFO"
+  OTEL_TRACES_EXPORTER: "none"
+  OTEL_METRICS_EXPORTER: "none"
+  OTEL_LOGS_EXPORTER: "none"
+  SENTRY_ENVIRONMENT: "production"
+  KEYCLOAK_URL: "https://authentication.boo.run"
+  KEYCLOAK_ISSUER_URL: "https://authentication.boo.run"
+  COACH_AGENT_MODEL: "anthropic/claude-opus-4.8-fast"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: boo-prod
+  labels: { app: api }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: api } }
+  template:
+    metadata: { labels: { app: api } }
+    spec:
+      # Graceful drain for the agent runtime (docs/agent-runtime-design.md §19): on SIGTERM the JVM shutdown hook flips
+      # the worker draining flag so no new agent-runs are claimed, while in-flight turns finish/checkpoint durably. The
+      # preStop sleep keeps the pod in the cluster long enough for live SSE subscribers to be re-routed and for the
+      # current turn to be persisted before the JVM is signalled; the reaper on surviving pods resumes anything unfinished.
+      # NOTE: the in-memory live hub assumes a single live executor per run; the run_event_batches + shared NOTIFY
+      # channel make subscribers work cross-pod, so replicas may be raised >1 (see §6) once load requires it.
+      terminationGracePeriodSeconds: 90
+      containers:
+        - name: api
+          image: registry.folk-decibel.ts.net/boo-run/boo-run
+          ports:
+            - { containerPort: 4044, name: http }
+            - { containerPort: 4042, name: metrics }
+
+          lifecycle:
+            preStop:
+              exec:
+                command: [ "sleep", "20" ]
+
+          envFrom:
+            - configMapRef:
+                name: api-config
+
+          env:
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: api-secret, key: database_url } }
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: api-secret, key: postgres_user } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: api-secret, key: postgres_password } }
+            - name: POSTGRES_DB
+              valueFrom: { secretKeyRef: { name: api-secret, key: postgres_db } }
+            - name: KEYCLOAK_REALM
+              valueFrom: { secretKeyRef: { name: api-secret, key: keycloak_realm } }
+            - name: KEYCLOAK_CLIENT_ID
+              valueFrom: { secretKeyRef: { name: api-secret, key: keycloak_client_id } }
+            - name: KEYCLOAK_ADMIN_CLIENT_ID
+              valueFrom: { secretKeyRef: { name: api-secret, key: keycloak_admin_client_id } }
+            - name: KEYCLOAK_ADMIN_SECRET
+              valueFrom: { secretKeyRef: { name: api-secret, key: keycloak_admin_secret } }
+            - name: OPENROUTER_API_KEY
+              valueFrom: { secretKeyRef: { name: api-secret, key: openrouter_api_key } }
+            - name: MAILERSEND_API_TOKEN
+              valueFrom: { secretKeyRef: { name: api-secret, key: mailersend_api_token } }
+            - name: SENTRY_AUTH_TOKEN
+              valueFrom: { secretKeyRef: { name: api-secret, key: sentry_auth_token } }
+            - name: SENTRY_DSN
+              valueFrom: { secretKeyRef: { name: api-secret, key: sentry_dsn } }
+            - name: STRAVA_CLIENT_ID
+              valueFrom: { secretKeyRef: { name: api-secret, key: strava_client_id } }
+            - name: STRAVA_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: api-secret, key: strava_client_secret } }
+            - name: STRAVA_WEBHOOK_VERIFY_TOKEN
+              valueFrom: { secretKeyRef: { name: api-secret, key: strava_webhook_verify_token } }
+            - name: STRAVA_WEBHOOK_CALLBACK_URL
+              valueFrom: { secretKeyRef: { name: api-secret, key: strava_webhook_callback_url } }
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 4044
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4044
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: boo-prod
+  labels: { app: api }
+spec:
+  type: ClusterIP
+  selector: { app: api }
+  ports:
+    - { name: http, port: 80, targetPort: 4044 }
+    - { name: metrics, port: 4042, targetPort: 4042 }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: boo-ingress
+  namespace: boo-prod
+  labels: { version: "1" }
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.boo.run
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port: { number: 80 }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api
+  namespace: boo-prod
+  labels: { release: prom }
+spec:
+  endpoints:
+    - interval: 10s
+      path: /metrics
+      port: metrics
+  namespaceSelector:
+    matchNames:
+      - boo-prod
+  selector:
+    matchLabels:
+      app: api

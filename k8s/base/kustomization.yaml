@@ -1,0 +1,8 @@
+resources:
+  - deployment-gateway.yaml
+
+images:
+  - name: registry.folk-decibel.ts.net/cebelca/gateway
+    newTag: latest
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization

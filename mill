@@ -1,0 +1,47 @@
+#!/usr/bin/env sh
+
+# Project `./mill` wrapper.
+#
+# Unlike the upstream Mill bootstrap script, this does NOT download Mill.
+# Instead it delegates to the Mill that is installed globally on PATH
+# (provided here by the nix devenv shell). This keeps the toolchain pinned
+# by devenv.nix while still giving IDEs/tools a `./mill` entrypoint to call.
+
+set -e
+
+# Resolve the absolute path of this script so we can skip it when searching
+# PATH (otherwise we'd re-invoke ourselves and recurse forever).
+self=$0
+case $self in
+  /*) ;;
+  *) self=$(pwd)/$self ;;
+esac
+# Canonicalise if possible (follows symlinks).
+if command -v realpath >/dev/null 2>&1; then
+  self=$(realpath "$self" 2>/dev/null || printf '%s' "$self")
+fi
+
+# Walk each PATH entry and pick the first executable `mill` that is not us.
+mill_bin=
+IFS=:
+for dir in $PATH; do
+  [ -n "$dir" ] || dir=.
+  candidate=$dir/mill
+  [ -x "$candidate" ] || continue
+  resolved=$candidate
+  if command -v realpath >/dev/null 2>&1; then
+    resolved=$(realpath "$candidate" 2>/dev/null || printf '%s' "$candidate")
+  fi
+  [ "$resolved" != "$self" ] || continue
+  mill_bin=$candidate
+  break
+done
+unset IFS
+
+if [ -z "$mill_bin" ]; then
+  echo "mill: no global Mill found on PATH." >&2
+  echo "      Enter the devenv shell (direnv/'devenv shell') so Mill is available." >&2
+  exit 1
+fi
+
+exec "$mill_bin" "$@"
