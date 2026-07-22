@@ -16,7 +16,7 @@ metadata:
   namespace: cebelca-prod
   labels: { app: gateway }
 spec:
-  replicas: 1
+  replicas: 2
   selector: { matchLabels: { app: gateway } }
   template:
     metadata: { labels: { app: gateway } }
@@ -25,17 +25,10 @@ spec:
         - name: gateway
           image: registry.folk-decibel.ts.net/cebelca/gateway
           ports: [ { containerPort: 8080 } ]
-          # args: [
-          #   "start",
-          #   "--metrics-enabled=true",
-          #   "--proxy-headers=xforwarded",
-          #   "--hostname-strict=true",
-          #   "--http-enabled=true",
-          #   "--hostname-debug=true",
-          #   "--health-enabled=true",
-          # ]
+
+          envFrom:
+            - configMapRef: { name: gateway-config }
           env:
-            - { name: APP_LOG_LEVEL, value: "INFO" }
             - { name: PORT, value: "8080" }
 
           # livenessProbe:

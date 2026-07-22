@@ -73,15 +73,19 @@ object gateway extends CebelcaModule with DockerModule:
     def envVars      = Map("PORT" -> "8080")
 
     // Registry path matches k8s/base/kustomization.yaml. `latest` plus a git-derived tag so deploys are pinnable.
-    // `Task.Input` (not `Task`): git HEAD is external state, so this must be re-read every run — a cached `Task` would
-    // pin whatever SHA was current the first time it evaluated this session and push a stale tag after a new commit.
+    // `Task.Input` (not `Task`): git HEAD (and the env override) are external state, so this must be re-read every run
+    // — a cached `Task` would pin whatever value was current the first time it evaluated this session and push a stale
+    // tag after a new commit. `IMAGE_VERSION`, when set, wins: it lets a release driver compute the version ONCE and
+    // feed the identical value to both the image push and the kustomize pin, so the two can never drift.
     private def gitTag = Task.Input {
-      os.proc("git", "describe", "--tags", "--always", "--dirty")
-        .call(cwd = mill.api.BuildCtx.workspaceRoot, check = false)
-        .out
-        .trim() match
-        case ""  => "latest"
-        case tag => tag
+      Task.env.get("IMAGE_VERSION").map(_.trim).filter(_.nonEmpty).getOrElse {
+        os.proc("git", "describe", "--tags", "--always", "--dirty")
+          .call(cwd = mill.api.BuildCtx.workspaceRoot, check = false)
+          .out
+          .trim() match
+          case ""  => "latest"
+          case tag => tag
+      }
     }
     def tags           = Task {
       val repo = "registry.folk-decibel.ts.net/cebelca/gateway"
