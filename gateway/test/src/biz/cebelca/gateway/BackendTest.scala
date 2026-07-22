@@ -3,7 +3,7 @@ package biz.cebelca.gateway
 import zio.*
 import zio.test.*
 import biz.cebelca.gateway.testkit.*
-import zio.http.URL
+import zio.http.*
 
 object BackendTest extends GatewaySpecDefault:
 
@@ -18,7 +18,10 @@ object BackendTest extends GatewaySpecDefault:
       resource.zip(id).map(Cmd.selectOne),
       resource.zip(filter).map((r, f) => Cmd.selectAllSafe(r, f)),
       resource.map(r => Cmd.selectAllBy(r, dateFrom = Some("2026-01-01"), dateTo = Some("2026-12-31"))),
+      resource.map(r => Cmd.selectAllBy(r, search = Some("consulting"))),
       resource.zip(args).map((r, kvs) => Cmd.insert(r, kvs*)),
+      resource.zip(id).zip(args).map((r, i, kvs) => Cmd.update(r, i, kvs*)),
+      resource.zip(id).map((r, i) => Cmd.delete(r, i)),
       Gen.const(Cmd.exploreResources),
       resource.map(Cmd.exploreMethods)
     )
@@ -32,5 +35,15 @@ object BackendTest extends GatewaySpecDefault:
         val request = backend.toRequest(cmd)
         assertCompletes
       }
-    } @@ TestAspect.samples(255) @@ TestAspect.nondeterministic
+    } @@ TestAspect.samples(255) @@ TestAspect.nondeterministic,
+    test("selectAllBy includes required filter/company/page args plus search") {
+      val backend = Backend(baseUrl)
+      val request = backend.toRequest(Cmd.selectAllBy("invoice-sent-o", search = Some("consulting")))
+
+      for body <- request.body.asString
+      yield assertTrue(
+        request.url.queryParams == QueryParams("_m" -> "select-all-by", "_r" -> "invoice-sent-o"),
+        body.split("&").toSet == Set("filter=all", "company=0", "page=-1", "search=consulting")
+      )
+    }
   )

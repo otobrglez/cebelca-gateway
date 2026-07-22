@@ -134,5 +134,33 @@ object GraphQLIntegrationSpec extends GatewaySpecDefault:
         unpaid.data.toString.contains("\"paid\":false"),
         !unpaid.data.toString.contains("\"paid\":true")
       )
+    },
+    test("mutations: createService → updateService → deleteService round-trip (self-cleaning)") {
+      // Create via the mutation, capturing the id so cleanup is guaranteed even if a later assertion fails.
+      ZIO.acquireReleaseWith(
+        run(s"""mutation { createService(input: {title: "${Marker}GQL", price: 5, mu: "kos", vat: 22}) { id title price } }""")
+      )(created => idFrom(created).fold(ZIO.unit)(id => CebelcaAPI.deleteService(id).ignore)) { created =>
+        val id = idFrom(created).getOrElse(-1L)
+        for
+          updated <- run(s"""mutation { updateService(id: $id, input: {title: "${Marker}GQL2", price: 7, mu: "ura", vat: 9.5}) { id title price mu } }""")
+          deleted <- run(s"mutation { deleteService(id: $id) }")
+          after   <- run("{ services { id } }")
+        yield assertTrue(
+          created.errors.isEmpty,
+          id > 0,
+          updated.errors.isEmpty,
+          updated.data.toString.contains(s"${Marker}GQL2"),
+          updated.data.toString.contains("\"mu\":\"ura\""),
+          deleted.errors.isEmpty,
+          deleted.data.toString.contains("\"deleteService\":true"),
+          !after.data.toString.contains(s"\"id\":$id")
+        )
+      }
     }
   ).provideShared(layers)
+
+  private val Marker = "ZZZ_ITG_"
+
+  /** Pull `createService.id` out of a GraphQL response, if present. */
+  private def idFrom(res: caliban.GraphQLResponse[Any]): Option[Long] =
+    "\"id\":(\\d+)".r.findFirstMatchIn(res.data.toString).map(_.group(1).toLong)

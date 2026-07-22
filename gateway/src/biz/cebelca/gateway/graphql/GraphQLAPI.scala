@@ -11,24 +11,40 @@ import caliban.schema.ArgBuilder.auto.*
 final case class Queries(
   partners: PartnersArgs => RIO[CebelcaToken, List[graphql.Partner]],
   partner: PartnerArgs => RIO[CebelcaToken, graphql.Partner],
-  services: RIO[CebelcaToken, List[graphql.Service]],
+  services: ServicesArgs => RIO[CebelcaToken, List[graphql.Service]],
   invoices: InvoicesArgs => RIO[CebelcaToken, List[graphql.Invoice]]
+)
+
+final private[graphql] case class CreateServiceArgs(input: ServiceInput)
+final private[graphql] case class UpdateServiceArgs(id: Long, input: ServiceInput)
+final private[graphql] case class DeleteServiceArgs(id: Long)
+
+final case class Mutations(
+  createService: CreateServiceArgs => RIO[CebelcaToken, graphql.Service],
+  updateService: UpdateServiceArgs => RIO[CebelcaToken, graphql.Service],
+  deleteService: DeleteServiceArgs => RIO[CebelcaToken, Boolean]
 )
 
 object GraphQLAPI:
   private val schema = new caliban.schema.GenericSchema[CebelcaToken] {}
   import schema.given
 
-  private given Schema[Any, graphql.PartnerFilter]    = Schema.gen
-  private given Schema[Any, graphql.PartnerArgs]      = Schema.gen
-  private given Schema[Any, graphql.PartnersArgs]     = Schema.gen
-  private given Schema[Any, graphql.InvoiceFilter]    = Schema.gen
-  private given Schema[Any, graphql.InvoicesArgs]     = Schema.gen
-  private given Schema[Any, graphql.Line]             = Schema.gen
-  private given Schema[Any, graphql.Service]          = Schema.gen
-  private given Schema[CebelcaToken, graphql.Invoice] = Schema.gen
-  private given Schema[CebelcaToken, graphql.Partner] = Schema.gen
-  private given Schema[CebelcaToken, graphql.Queries] = Schema.gen
+  private given Schema[Any, graphql.CreateServiceArgs]  = Schema.gen
+  private given Schema[Any, graphql.DeleteServiceArgs]  = Schema.gen
+  private given Schema[Any, graphql.InvoiceFilter]      = Schema.gen
+  private given Schema[Any, graphql.InvoicesArgs]       = Schema.gen
+  private given Schema[Any, graphql.Line]               = Schema.gen
+  private given Schema[Any, graphql.PartnerArgs]        = Schema.gen
+  private given Schema[Any, graphql.PartnerFilter]      = Schema.gen
+  private given Schema[Any, graphql.PartnersArgs]       = Schema.gen
+  private given Schema[Any, graphql.ServiceInput]       = Schema.gen
+  private given Schema[Any, graphql.Service]            = Schema.gen
+  private given Schema[Any, graphql.UpdateServiceArgs]  = Schema.gen
+  private given Schema[Any, graphql.ServicesArgs]       = Schema.gen
+  private given Schema[CebelcaToken, graphql.Invoice]   = Schema.gen
+  private given Schema[CebelcaToken, graphql.Mutations] = Schema.gen
+  private given Schema[CebelcaToken, graphql.Partner]   = Schema.gen
+  private given Schema[CebelcaToken, graphql.Queries]   = Schema.gen
 
   private def sanitizeError(e: CebelcaError): Throwable = new RuntimeException(e.getMessage)
 
@@ -46,8 +62,7 @@ object GraphQLAPI:
     val filter = args.filter.getOrElse(graphql.PartnerFilter.All).wire
     api
       .partnersFiltered(filter, args.search, args.page.getOrElse(-1))
-      .map(_.filter(keepById(args.ids)).map(toPartner(api)))
-      .mapError(sanitizeError)
+      .mapBoth(sanitizeError, _.filter(keepById(args.ids)).map(toPartner(api)))
 
   private case class InvoicesForPartner(
     partnerId: Long,
@@ -102,16 +117,31 @@ object GraphQLAPI:
         )(invoicesDataSource(api))
     )
 
+  private def createService(api: CebelcaAPI)(i: graphql.ServiceInput): RIO[CebelcaToken, graphql.Service] =
+    api
+      .createService(i.title, i.price, i.mu, i.vat, i.group.getOrElse(""), i.konto.getOrElse(""))
+      .mapBoth(sanitizeError, graphql.Service.from)
+
+  private def updateService(api: CebelcaAPI)(id: Long, i: graphql.ServiceInput): RIO[CebelcaToken, graphql.Service] =
+    api
+      .updateService(id, i.title, i.price, i.mu, i.vat, i.group.getOrElse(""), i.konto.getOrElse(""))
+      .mapBoth(sanitizeError, graphql.Service.from)
+
   def make(api: CebelcaAPI): GraphQL[CebelcaToken] =
     val resolver = RootResolver(
       Queries(
         partners = selectPartners(api),
         partner = args => api.partner(args.id).mapBoth(sanitizeError, toPartner(api)),
-        services = api.services.mapBoth(sanitizeError, _.map(graphql.Service.from)),
+        services = args => api.services(args.search).mapBoth(sanitizeError, _.map(graphql.Service.from)),
         invoices = args =>
           api
             .invoicesBy(args.filter.getOrElse(graphql.InvoiceFilter.All).wire, args.dateFrom, args.dateTo)
             .mapBoth(sanitizeError, _.map(graphql.Invoice.from(_)(linesOf(api))))
+      ),
+      Mutations(
+        createService = args => createService(api)(args.input),
+        updateService = args => updateService(api)(args.id, args.input),
+        deleteService = args => api.deleteService(args.id).mapError(sanitizeError)
       )
     )
     graphQL(resolver)

@@ -47,16 +47,13 @@ object GraphQLServer:
               }
       }
     )
-
-  /** Redirect the bare root path to the GraphiQL UI so `/` lands somewhere useful. Kept OUTSIDE the auth gate: a plain
-    * `GET /` carries no token and no body, so the gate would 401 it rather than let it through.
-    */
+  
   private def rootRedirect(graphiqlPath: Option[String]): Routes[Any, Response] =
     graphiqlPath match
       case Some(path) =>
         val target = URL(Path.decode(path))
         Routes(Method.GET / Root -> Handler.fromResponse(Response.seeOther(target)))
-      case None => Routes.empty
+      case None       => Routes.empty
 
   private def routes(
     apiPath: String,

@@ -3,7 +3,7 @@ documents: '**/*.graphql'
 extensions:
   endpoints:
     Development:
-      url: https://my.api.com/one/graphql
+      url: http://localhost:5454/api/graphql
       headers:
         Authorization: bearer ${CEBELCA_BIZ_API_KEY}
     Docker:

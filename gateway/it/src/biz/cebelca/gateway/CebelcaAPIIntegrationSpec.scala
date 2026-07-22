@@ -80,6 +80,32 @@ object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
         services.forall(s => s.price >= 0 && s.object_title.nonEmpty)
       )
     },
+    test("servicesFiltered(search): server-side substring match (via select-all-by, not select-all)") {
+      // create two distinct services so search must discriminate; guaranteed cleanup on any exit.
+      ZIO.acquireReleaseWith(
+        CebelcaAPI.createService(s"${Marker}alpha_widget", 10, "kos", 22, "", "") <*>
+          CebelcaAPI.createService(s"${Marker}beta_gadget", 20, "kos", 22, "", "")
+      ) { case (a, b) => CebelcaAPI.deleteService(a.id).ignore *> CebelcaAPI.deleteService(b.id).ignore } {
+        case (a, b) =>
+          for
+            all     <- CebelcaAPI.servicesFiltered(None)
+            widget  <- CebelcaAPI.servicesFiltered(Some("alpha_widget"))
+            upper   <- CebelcaAPI.servicesFiltered(Some("ALPHA_WIDGET"))
+            none    <- CebelcaAPI.servicesFiltered(Some("nomatch_zzz_qqq"))
+          yield assertTrue(
+            // both created services are visible unfiltered
+            all.exists(_.id == a.id) && all.exists(_.id == b.id),
+            // search narrows to just the matching one — proving it filters server-side (the bug was: it did not)
+            widget.exists(_.id == a.id),
+            !widget.exists(_.id == b.id),
+            widget.size < all.size,
+            // case-insensitive
+            upper.map(_.id).toSet == widget.map(_.id).toSet,
+            // no false matches
+            none.isEmpty
+          )
+      }
+    },
     test("partnersFiltered(search): case-insensitive substring match on name, server-side") {
       for
         all      <- CebelcaAPI.partnersFiltered("all")
@@ -92,6 +118,35 @@ object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
         // case-insensitive: "demo" and "DEMO" return the same rows
         matched.map(_.id).toSet == upper.map(_.id).toSet
       )
+    },
+    test("services CRUD: create → update → delete round-trip (self-cleaning)") {
+      // acquireReleaseWith guarantees the created service is deleted even if an assertion fails or the effect dies.
+      ZIO.acquireReleaseWith(
+        CebelcaAPI.createService(s"${Marker}CREATE", 42.5, "kos", 22.0, "", "")
+      )(created => CebelcaAPI.deleteService(created.id).ignore) { created =>
+        for
+          updated <- CebelcaAPI.updateService(created.id, s"${Marker}UPDATE", 99.9, "ura", 9.5, "", "")
+          deleted <- CebelcaAPI.deleteService(created.id)
+          after   <- CebelcaAPI.services
+        yield assertTrue(
+          created.object_title == s"${Marker}CREATE",
+          created.price == 42.5,
+          created.id > 0,
+          updated.id == created.id,
+          updated.object_title == s"${Marker}UPDATE",
+          updated.price == 99.9,
+          updated.measure_unit == "ura",
+          deleted,
+          !after.exists(_.id == created.id)
+        )
+      }
+    },
+    // Runs last (suite is sequential): sweep any services left over from an interrupted run and assert none remained.
+    test("services cleanup sweep: no test residue survives") {
+      for
+        orphans <- CebelcaAPI.services.map(_.filter(_.object_title.startsWith(Marker)))
+        _       <- ZIO.foreachDiscard(orphans)(o => CebelcaAPI.deleteService(o.id).ignore)
+      yield assertTrue(orphans.isEmpty)
     }
     /*
     test("validation error: empty invoice insert surfaces CebelcaError.Validation") {
@@ -104,6 +159,9 @@ object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
     }
      */
   ).provideShared(layers)
+
+  /** Prefix marking services created by this suite, so any orphan from a hard crash is identifiable and sweepable. */
+  private val Marker = "ZZZ_IT_"
 
   // Minimal decoder for explore-mode rows. Some descriptions are null.
   final case class ExploreEntry(name: String, description: Option[String]) derives zio.json.JsonDecoder

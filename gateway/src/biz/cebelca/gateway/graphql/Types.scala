@@ -15,12 +15,12 @@ final private[graphql] case class PartnerArgs(id: PartnerID)
   * value the webapp passes to `partner select-all-safe`, so the server does the (authoritative) selection — the same
   * call the UI's "Dolžniki" button makes. [[wire]] is that value; note the API's own spelling `pasive` (one 's').
   *
-  *   - [[All]]      — every partner (`all`)
+  *   - [[All]] — every partner (`all`)
   *   - [[WithSent]] — partners that have at least one sent invoice (`wsent`)
-  *   - [[Debtors]]  — partners the server considers in debt (`debtors`)
-  *   - [[Passive]]  — passive partners (`pasive`)
+  *   - [[Debtors]] — partners the server considers in debt (`debtors`)
+  *   - [[Passive]] — passive partners (`pasive`)
   *   - [[Disabled]] — hidden/disabled partners (`disabled`)
-  *   - [[Last]]     — recently used partners (`last`)
+  *   - [[Last]] — recently used partners (`last`)
   */
 enum PartnerFilter(val wire: String):
   case All      extends PartnerFilter("all")
@@ -48,10 +48,10 @@ final private[graphql] case class PartnersArgs(
   * `filter=` value the webapp passes to `invoice-sent select-all-by`, so the server does the (authoritative) selection.
   * [[wire]] is that value; note the API's own spelling `payed`/`unpayed`.
   *
-  *   - [[All]]      — every invoice (`all`)
-  *   - [[Paid]]     — paid invoices (`payed`)
-  *   - [[Unpaid]]   — unpaid invoices (`unpayed`)
-  *   - [[PastDue]]  — overdue invoices (`pastdue`)
+  *   - [[All]] — every invoice (`all`)
+  *   - [[Paid]] — paid invoices (`payed`)
+  *   - [[Unpaid]] — unpaid invoices (`unpayed`)
+  *   - [[PastDue]] — overdue invoices (`pastdue`)
   *   - [[Archived]] — archived invoices (`archived`)
   */
 enum InvoiceFilter(val wire: String):
@@ -70,6 +70,10 @@ final private[graphql] case class InvoicesArgs(
   filter: Option[InvoiceFilter],
   dateFrom: Option[String],
   dateTo: Option[String]
+)
+
+final private[graphql] case class ServicesArgs(
+  search: Option[String]
 )
 
 /** A single line item on an invoice. `lines` on [[Invoice]] is a batched [[ZQuery]] field (see below), so selecting
@@ -117,8 +121,8 @@ final private[graphql] case class Partner(
   invoices: InvoicesArgs => ZQuery[CebelcaToken, CebelcaError, List[Invoice]]
 )
 
-/** A service / pricelist entry, mirroring the UI's "Storitve" page. Sourced from the `invoice-sent-o` resource;
-  * field names are normalised from the upstream row (`object_title` → `title`, `measure_unit` → `mu`).
+/** A service / pricelist entry, mirroring the UI's "Storitve" page. Sourced from the `invoice-sent-o` resource; field
+  * names are normalised from the upstream row (`object_title` → `title`, `measure_unit` → `mu`).
   */
 final private[graphql] case class Service(
   id: Long,
@@ -132,3 +136,16 @@ final private[graphql] case class Service(
 private[graphql] object Service:
   def from(s: gateway.Service): Service =
     Service(s.id, s.object_title, s.price, s.measure_unit, s.vat, s.group, s.konto)
+
+/** Input for creating/updating a [[Service]]. Field names mirror the [[Service]] output type (`title`, `mu`); the API
+  * layer maps them to the upstream `object_title`/`measure_unit`. `group`/`konto` are optional (default `""`). Update
+  * is a full replace — every non-optional field must be supplied on update, not just the changed ones.
+  */
+final private[graphql] case class ServiceInput(
+  title: String,
+  price: Double,
+  mu: String,
+  vat: Double,
+  group: Option[String],
+  konto: Option[String]
+)

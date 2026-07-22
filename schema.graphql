@@ -6,11 +6,12 @@
 #
 # To regenerate: ./mill schema-gen.generate
 #
-# Generated from git: 73c8712
+# Generated from git: ffe7ed2-dirty
 # ─────────────────────────────────────────────────────────────────────────────
 
 schema {
   query: Queries
+  mutation: Mutations
 }
 
 scalar Long
@@ -30,6 +31,15 @@ enum PartnerFilter {
   Last
   Passive
   WithSent
+}
+
+input ServiceInput {
+  title: String!
+  price: Float!
+  mu: String!
+  vat: Float!
+  group: String
+  konto: String
 }
 
 type Invoice {
@@ -52,6 +62,12 @@ type Line {
   discount: Float!
 }
 
+type Mutations {
+  createService(input: ServiceInput!): Service
+  updateService(id: Long!, input: ServiceInput!): Service
+  deleteService(id: Long!): Boolean
+}
+
 type Partner {
   id: Long!
   name: String!
@@ -62,7 +78,7 @@ type Partner {
 type Queries {
   partners(ids: [Long!], filter: PartnerFilter, search: String, page: Int): [Partner!]
   partner(id: Long!): Partner
-  services: [Service!]
+  services(search: String): [Service!]
   invoices(filter: InvoiceFilter, dateFrom: String, dateTo: String): [Invoice!]
 }
 

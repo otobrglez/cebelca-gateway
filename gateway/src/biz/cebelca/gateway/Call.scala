@@ -8,6 +8,9 @@ import zio.http.*
   *   - output side is covariant → envelope decoding, domain mapping compose via `map`
   */
 final case class Call[-I, +A](run: I => IO[CebelcaError, A]):
+  def log: Call[I, A] =
+    Call(i => run(i).timed.flatMap((d, a) => ZIO.log(s"${i.toString.trim}, Duration: ${d.toMillis}ms").as(a)))
+
   def map[B](f: A => B): Call[I, B]                                 = Call(run(_).map(f))
   def mapZIO[B](f: A => IO[CebelcaError, B]): Call[I, B]            = Call(run(_).flatMap(f))
   def contramap[H](f: H => I): Call[H, A]                           = Call(h => run(f(h)))

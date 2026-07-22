@@ -27,3 +27,4 @@ fragment InvoiceLine on Line {
 fragment PartnerF on Partner {
     name
 }
+

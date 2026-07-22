@@ -1,0 +1,6 @@
+query AllServices {
+    services(search: "dev") {
+    # services {
+        id, price, title, vat, konto
+    }
+}

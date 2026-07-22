@@ -71,3 +71,6 @@ final case class Service(
   @jsonField("group_") group: String,
   konto: String
 ) derives JsonDecoder
+
+/** The id-only row an `insert-into` returns: `[[{"id":N}]]`. */
+final case class IdRow(id: Long) derives JsonDecoder

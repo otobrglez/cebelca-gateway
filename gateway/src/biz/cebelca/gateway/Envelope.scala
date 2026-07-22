@@ -26,6 +26,12 @@ object Envelope:
       case Nil       => ZIO.fail(CebelcaError.Decode("expected at least one row, got empty", ""))
     }
 
+  /** Decode a mutation acknowledgement, e.g. `delete` returning `[[{"OK":"res"}]]`. Any other (non-error) shape means
+    * the ack was absent — surfaced as `false` rather than a decode failure. Error envelopes still fail as usual.
+    */
+  def ack(response: Response): IO[CebelcaError, Boolean] =
+    rows[Map[String, String]](response).map(_.headOption.flatMap(_.get("OK")).contains("res"))
+
   private def body(response: Response): IO[CebelcaError, String] =
     response.body.asString.mapBoth(CebelcaError.Transport(_), _ -> response.status.code).flatMap {
       case raw -> code if code >= 400 && code != 403 => ZIO.fail(CebelcaError.Http(code, raw))

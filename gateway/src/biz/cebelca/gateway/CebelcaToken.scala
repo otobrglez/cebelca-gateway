@@ -15,3 +15,6 @@ object CebelcaToken:
     ZLayer.fromZIO(UserCredentials.apiToken.map(CebelcaToken(_)))
 
   val empty: CebelcaToken = CebelcaToken("")
+
+  def mapZIO[A, R, B](action: CebelcaToken => ZIO[A, R, B]): ZIO[A & CebelcaToken, R, B] =
+    ZIO.serviceWithZIO[CebelcaToken](action)
