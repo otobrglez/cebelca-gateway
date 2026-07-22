@@ -6,7 +6,7 @@
 #
 # To regenerate: ./mill schema-gen.generate
 #
-# Generated from git: ceb111e-dirty
+# Generated from git: 73c8712
 # ─────────────────────────────────────────────────────────────────────────────
 
 schema {
