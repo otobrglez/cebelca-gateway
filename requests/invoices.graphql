@@ -1,0 +1,29 @@
+query PartnersLookup($ids: [Long!]) {
+    partners(ids: $ids, filter: Debtors) {
+        id
+        ... PartnerF
+        invoices {
+            id
+            title
+            dateSent
+            payment
+            lines {
+                ...InvoiceLine
+            }
+        }
+    }
+}
+
+fragment InvoiceLine on Line {
+    id
+    title
+    qty
+    mu
+    price
+    vat
+    discount
+}
+
+fragment PartnerF on Partner {
+    name
+}

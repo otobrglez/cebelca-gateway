@@ -48,6 +48,16 @@ object GraphQLServer:
       }
     )
 
+  /** Redirect the bare root path to the GraphiQL UI so `/` lands somewhere useful. Kept OUTSIDE the auth gate: a plain
+    * `GET /` carries no token and no body, so the gate would 401 it rather than let it through.
+    */
+  private def rootRedirect(graphiqlPath: Option[String]): Routes[Any, Response] =
+    graphiqlPath match
+      case Some(path) =>
+        val target = URL(Path.decode(path))
+        Routes(Method.GET / Root -> Handler.fromResponse(Response.seeOther(target)))
+      case None => Routes.empty
+
   private def routes(
     apiPath: String,
     graphiqlPath: Option[String]
@@ -56,7 +66,7 @@ object GraphQLServer:
       .make(api)
       .routes(apiPath = apiPath, graphiqlPath = graphiqlPath)
       .orDie
-      .map(_ @@ authGate(graphiqlPath))
+      .map(gql => rootRedirect(graphiqlPath) ++ (gql @@ authGate(graphiqlPath)))
 
   def serve(port: Int, apiPath: String, graphiqlPath: Option[String]): RIO[Scope & CebelcaAPI, Nothing] = for
     _       <- Configurator.setQueryExecution(QueryExecution.Batched)

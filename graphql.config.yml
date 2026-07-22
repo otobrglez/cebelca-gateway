@@ -1,2 +1,14 @@
 schema: schema.graphql
 documents: '**/*.graphql'
+extensions:
+  endpoints:
+    Development:
+      url: https://my.api.com/one/graphql
+      headers:
+        Authorization: bearer ${CEBELCA_BIZ_API_KEY}
+    Docker:
+      url: http://localhost:8001/api/graphql
+      headers:
+        Authorization: bearer ${CEBELCA_BIZ_API_KEY}
+    Production:
+      url: https://my.api.com/two/graphql
