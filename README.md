@@ -25,6 +25,28 @@ The schema is auto-generated and thus up-to-date with this repository. If manual
 ./mill schema-gen.generate
 ```
 
+## Example queries
+
+```graphql
+query OutstandingInvoices($ids: [Long!]){
+  partners(ids: $ids, filter: Debtors) {
+    id, name, city
+    invoices {
+      lines { ...InvoiceLine}
+    }
+  }
+}
+
+fragment InvoiceLine on Line {
+  title, qty, mu
+}
+
+# Variables
+# {"ids": [7]}
+# Headers
+# {"Authorization": "Bearer <your_token>"}
+```
+
 # Development
 
 - This project uses devenv (Nix) - ([`devenv.nix`](./devenv.nix)) - for dependency management and reproducible environments.
