@@ -11,4 +11,6 @@ extensions:
       headers:
         Authorization: bearer ${CEBELCA_BIZ_API_KEY}
     Production:
-      url: https://my.api.com/two/graphql
+      url: https://cebelca-gateway.pinkstack.com/api/graphql
+      headers:
+        Authorization: bearer ${CEBELCA_BIZ_API_KEY}

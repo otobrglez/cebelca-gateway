@@ -6,7 +6,7 @@
 #
 # To regenerate: ./mill schema-gen.generate
 #
-# Generated from git: unknown
+# Generated from git: ce5d97f-dirty
 # ─────────────────────────────────────────────────────────────────────────────
 
 schema {
