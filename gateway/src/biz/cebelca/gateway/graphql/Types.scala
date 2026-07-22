@@ -117,9 +117,38 @@ private[graphql] object Invoice:
 final private[graphql] case class Partner(
   id: Long,
   name: String,
+  street: String,
+  postal: String,
   city: String,
+  vatid: String,
+  country: String,
+  lang: String,
   invoices: InvoicesArgs => ZQuery[CebelcaToken, CebelcaError, List[Invoice]]
 )
+
+/** Input for creating/updating a [[Partner]]. Only `name` is required upstream; the rest default to empty. Update is a
+  * full replace — supply every field you want to keep, not just the changed ones.
+  */
+final private[graphql] case class PartnerInput(
+  name: String,
+  street: Option[String],
+  postal: Option[String],
+  city: Option[String],
+  vatid: Option[String],
+  country: Option[String],
+  lang: Option[String]
+)
+private[graphql] object PartnerInput:
+  def toFields(i: PartnerInput): gateway.PartnerFields =
+    gateway.PartnerFields(
+      name = i.name,
+      street = i.street.getOrElse(""),
+      postal = i.postal.getOrElse(""),
+      city = i.city.getOrElse(""),
+      vatid = i.vatid.getOrElse(""),
+      country = i.country.getOrElse(""),
+      lang = i.lang.getOrElse("")
+    )
 
 /** A service / pricelist entry, mirroring the UI's "Storitve" page. Sourced from the `invoice-sent-o` resource; field
   * names are normalised from the upstream row (`object_title` → `title`, `measure_unit` → `mu`).
@@ -149,3 +178,6 @@ final private[graphql] case class ServiceInput(
   group: Option[String],
   konto: Option[String]
 )
+private[graphql] object ServiceInput:
+  def toFields(i: ServiceInput): gateway.ServiceFields =
+    gateway.ServiceFields(i.title, i.price, i.mu, i.vat, i.group.getOrElse(""), i.konto.getOrElse(""))

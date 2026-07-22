@@ -48,6 +48,30 @@ object GraphQLServer:
       }
     )
   
+  /** Liveness/readiness probe for Kubernetes. Deliberately trivial — the gateway is stateless, so a plain `200 ok`
+    * confirms the process is up and accepting connections. Kept outside `authGate` so probes need no Bearer token.
+    */
+  private val healthRoute: Routes[Any, Response] =
+    Routes(Method.GET / "health" -> Handler.fromResponse(Response.text("ok")))
+
+  /** Serve the GraphQL SDL publicly (no auth) at `/schema.graphql`. The file is baked into the assembly jar as a
+    * classpath resource at build time (see `gateway.schemaResource` in build.mill), so it always matches the shipped
+    * server. Falls back to a 404 if the resource is somehow absent (e.g. run outside the packaged jar).
+    */
+  private val schemaRoute: Routes[Any, Response] =
+    Routes(
+      Method.GET / "schema.graphql" -> Handler.fromZIO {
+        ZIO
+          .attemptBlocking(Option(getClass.getResourceAsStream("/schema.graphql")))
+          .some
+          .flatMap(is => ZIO.attemptBlocking(scala.io.Source.fromInputStream(is)(using scala.io.Codec.UTF8).mkString))
+          .fold(
+            _ => Response.notFound("schema not available"),
+            sdl => Response.text(sdl).addHeader(Header.ContentType(MediaType.text.plain))
+          )
+      }
+    )
+
   private def rootRedirect(graphiqlPath: Option[String]): Routes[Any, Response] =
     graphiqlPath match
       case Some(path) =>
@@ -63,7 +87,7 @@ object GraphQLServer:
       .make(api)
       .routes(apiPath = apiPath, graphiqlPath = graphiqlPath)
       .orDie
-      .map(gql => rootRedirect(graphiqlPath) ++ (gql @@ authGate(graphiqlPath)))
+      .map(gql => healthRoute ++ schemaRoute ++ rootRedirect(graphiqlPath) ++ (gql @@ authGate(graphiqlPath)))
 
   def serve(port: Int, apiPath: String, graphiqlPath: Option[String]): RIO[Scope & CebelcaAPI, Nothing] = for
     _       <- Configurator.setQueryExecution(QueryExecution.Batched)

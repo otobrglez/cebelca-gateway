@@ -6,7 +6,7 @@
 #
 # To regenerate: ./mill schema-gen.generate
 #
-# Generated from git: ffe7ed2-dirty
+# Generated from git: b3c9852-dirty
 # ─────────────────────────────────────────────────────────────────────────────
 
 schema {
@@ -31,6 +31,16 @@ enum PartnerFilter {
   Last
   Passive
   WithSent
+}
+
+input PartnerInput {
+  name: String!
+  street: String
+  postal: String
+  city: String
+  vatid: String
+  country: String
+  lang: String
 }
 
 input ServiceInput {
@@ -66,12 +76,20 @@ type Mutations {
   createService(input: ServiceInput!): Service
   updateService(id: Long!, input: ServiceInput!): Service
   deleteService(id: Long!): Boolean
+  createPartner(input: PartnerInput!): Partner
+  updatePartner(id: Long!, input: PartnerInput!): Partner
+  deletePartner(id: Long!): Boolean
 }
 
 type Partner {
   id: Long!
   name: String!
+  street: String!
+  postal: String!
   city: String!
+  vatid: String!
+  country: String!
+  lang: String!
   invoices(filter: InvoiceFilter, dateFrom: String, dateTo: String): [Invoice!]
 }
 

@@ -7,6 +7,7 @@ import zio.query.{DataSource, Request, ZQuery}
 import caliban.*
 import caliban.schema.Schema
 import caliban.schema.ArgBuilder.auto.*
+import caliban.wrappers.FieldMetrics
 
 final case class Queries(
   partners: PartnersArgs => RIO[CebelcaToken, List[graphql.Partner]],
@@ -18,11 +19,17 @@ final case class Queries(
 final private[graphql] case class CreateServiceArgs(input: ServiceInput)
 final private[graphql] case class UpdateServiceArgs(id: Long, input: ServiceInput)
 final private[graphql] case class DeleteServiceArgs(id: Long)
+final private[graphql] case class CreatePartnerArgs(input: PartnerInput)
+final private[graphql] case class UpdatePartnerArgs(id: Long, input: PartnerInput)
+final private[graphql] case class DeletePartnerArgs(id: Long)
 
 final case class Mutations(
   createService: CreateServiceArgs => RIO[CebelcaToken, graphql.Service],
   updateService: UpdateServiceArgs => RIO[CebelcaToken, graphql.Service],
-  deleteService: DeleteServiceArgs => RIO[CebelcaToken, Boolean]
+  deleteService: DeleteServiceArgs => RIO[CebelcaToken, Boolean],
+  createPartner: CreatePartnerArgs => RIO[CebelcaToken, graphql.Partner],
+  updatePartner: UpdatePartnerArgs => RIO[CebelcaToken, graphql.Partner],
+  deletePartner: DeletePartnerArgs => RIO[CebelcaToken, Boolean]
 )
 
 object GraphQLAPI:
@@ -30,23 +37,35 @@ object GraphQLAPI:
   import schema.given
 
   private given Schema[Any, graphql.CreateServiceArgs]  = Schema.gen
+  private given Schema[Any, graphql.UpdateServiceArgs]  = Schema.gen
   private given Schema[Any, graphql.DeleteServiceArgs]  = Schema.gen
-  private given Schema[Any, graphql.InvoiceFilter]      = Schema.gen
-  private given Schema[Any, graphql.InvoicesArgs]       = Schema.gen
-  private given Schema[Any, graphql.Line]               = Schema.gen
+  private given Schema[Any, graphql.ServiceInput]       = Schema.gen
+  private given Schema[Any, graphql.Service]            = Schema.gen
+  private given Schema[Any, graphql.ServicesArgs]       = Schema.gen
+  private given Schema[Any, graphql.CreatePartnerArgs]  = Schema.gen
+  private given Schema[Any, graphql.UpdatePartnerArgs]  = Schema.gen
+  private given Schema[Any, graphql.DeletePartnerArgs]  = Schema.gen
+  private given Schema[Any, graphql.PartnerInput]       = Schema.gen
   private given Schema[Any, graphql.PartnerArgs]        = Schema.gen
   private given Schema[Any, graphql.PartnerFilter]      = Schema.gen
   private given Schema[Any, graphql.PartnersArgs]       = Schema.gen
-  private given Schema[Any, graphql.ServiceInput]       = Schema.gen
-  private given Schema[Any, graphql.Service]            = Schema.gen
-  private given Schema[Any, graphql.UpdateServiceArgs]  = Schema.gen
-  private given Schema[Any, graphql.ServicesArgs]       = Schema.gen
+  private given Schema[Any, graphql.InvoiceFilter]      = Schema.gen
+  private given Schema[Any, graphql.InvoicesArgs]       = Schema.gen
+  private given Schema[Any, graphql.Line]               = Schema.gen
   private given Schema[CebelcaToken, graphql.Invoice]   = Schema.gen
   private given Schema[CebelcaToken, graphql.Mutations] = Schema.gen
   private given Schema[CebelcaToken, graphql.Partner]   = Schema.gen
   private given Schema[CebelcaToken, graphql.Queries]   = Schema.gen
 
   private def sanitizeError(e: CebelcaError): Throwable = new RuntimeException(e.getMessage)
+
+  /** Adapt a typed API effect into what resolvers surface: sanitise the [[CebelcaError]] to a generic throwable, and
+    * (optionally) map the success value to its GraphQL representation. Removes the `.mapBoth(sanitizeError, …)` /
+    * `.mapError(sanitizeError)` boilerplate repeated on every resolver.
+    */
+  extension [A](z: ZIO[CebelcaToken, CebelcaError, A])
+    private def resolved: RIO[CebelcaToken, A]              = z.mapError(sanitizeError)
+    private def resolvedAs[B](f: A => B): RIO[CebelcaToken, B] = z.mapBoth(sanitizeError, f)
 
   /** Keep-all when no ids are requested (`None`/empty), otherwise keep only partners whose id is in the set. */
   private def keepById(ids: Option[List[Long]]): biz.cebelca.gateway.Partner => Boolean =
@@ -62,7 +81,7 @@ object GraphQLAPI:
     val filter = args.filter.getOrElse(graphql.PartnerFilter.All).wire
     api
       .partnersFiltered(filter, args.search, args.page.getOrElse(-1))
-      .mapBoth(sanitizeError, _.filter(keepById(args.ids)).map(toPartner(api)))
+      .resolvedAs(_.filter(keepById(args.ids)).map(toPartner(api)))
 
   private case class InvoicesForPartner(
     partnerId: Long,
@@ -110,38 +129,38 @@ object GraphQLAPI:
     graphql.Partner(
       id = p.id,
       name = p.name,
+      street = p.street,
+      postal = p.postal,
       city = p.city,
+      vatid = p.vatid,
+      country = p.country,
+      lang = p.lang,
       invoices = args =>
         ZQuery.fromRequest(
           InvoicesForPartner(p.id, args.filter.getOrElse(graphql.InvoiceFilter.All).wire, args.dateFrom, args.dateTo)
         )(invoicesDataSource(api))
     )
 
-  private def createService(api: CebelcaAPI)(i: graphql.ServiceInput): RIO[CebelcaToken, graphql.Service] =
-    api
-      .createService(i.title, i.price, i.mu, i.vat, i.group.getOrElse(""), i.konto.getOrElse(""))
-      .mapBoth(sanitizeError, graphql.Service.from)
-
-  private def updateService(api: CebelcaAPI)(id: Long, i: graphql.ServiceInput): RIO[CebelcaToken, graphql.Service] =
-    api
-      .updateService(id, i.title, i.price, i.mu, i.vat, i.group.getOrElse(""), i.konto.getOrElse(""))
-      .mapBoth(sanitizeError, graphql.Service.from)
-
   def make(api: CebelcaAPI): GraphQL[CebelcaToken] =
     val resolver = RootResolver(
       Queries(
         partners = selectPartners(api),
-        partner = args => api.partner(args.id).mapBoth(sanitizeError, toPartner(api)),
-        services = args => api.services(args.search).mapBoth(sanitizeError, _.map(graphql.Service.from)),
+        partner = args => api.partner(args.id).resolvedAs(toPartner(api)),
+        services = args => api.services(args.search).resolvedAs(_.map(graphql.Service.from)),
         invoices = args =>
           api
             .invoicesBy(args.filter.getOrElse(graphql.InvoiceFilter.All).wire, args.dateFrom, args.dateTo)
-            .mapBoth(sanitizeError, _.map(graphql.Invoice.from(_)(linesOf(api))))
+            .resolvedAs(_.map(graphql.Invoice.from(_)(linesOf(api))))
       ),
       Mutations(
-        createService = args => createService(api)(args.input),
-        updateService = args => updateService(api)(args.id, args.input),
-        deleteService = args => api.deleteService(args.id).mapError(sanitizeError)
+        createService = args => api.createService(graphql.ServiceInput.toFields(args.input)).resolvedAs(graphql.Service.from),
+        updateService = args => api.updateService(args.id, graphql.ServiceInput.toFields(args.input)).resolvedAs(graphql.Service.from),
+        deleteService = args => api.deleteService(args.id).resolved,
+        createPartner = args => api.createPartner(graphql.PartnerInput.toFields(args.input)).resolvedAs(toPartner(api)),
+        updatePartner = args => api.updatePartner(args.id, graphql.PartnerInput.toFields(args.input)).resolvedAs(toPartner(api)),
+        deletePartner = args => api.deletePartner(args.id).resolved
       )
     )
-    graphQL(resolver)
+    // FieldMetrics emits per-field `graphql_fields_total` (labels: field, status) and
+    // `graphql_fields_duration_seconds` (label: field) into ZIO's metric registry — scraped at :METRICS_PORT/metrics.
+    graphQL(resolver) @@ FieldMetrics.wrapper()

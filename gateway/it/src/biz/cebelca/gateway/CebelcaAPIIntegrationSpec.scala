@@ -25,12 +25,6 @@ object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
         rows <- api.query[ExploreEntry](Cmd.exploreResources)
       yield assertTrue(rows.exists(_.name == "invoice-sent"), rows.exists(_.name == "partner"))
     },
-    test("items: select-all decodes into Item") {
-      for
-        api   <- ZIO.service[CebelcaAPI]
-        items <- api.query[Item](Cmd.select("item"))
-      yield assertTrue(items.forall(_.price >= 0))
-    },
     test("partnersFiltered(debtors): server-side filter returns a subset of all partners") {
       for
         all     <- CebelcaAPI.partnersFiltered("all")
@@ -74,7 +68,7 @@ object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
         )
     },
     test("services: select-all decodes invoice-sent-o pricelist rows") {
-      for services <- CebelcaAPI.services
+      for services <- CebelcaAPI.services()
       yield assertTrue(
         services.nonEmpty,
         services.forall(s => s.price >= 0 && s.object_title.nonEmpty)
@@ -83,15 +77,15 @@ object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
     test("servicesFiltered(search): server-side substring match (via select-all-by, not select-all)") {
       // create two distinct services so search must discriminate; guaranteed cleanup on any exit.
       ZIO.acquireReleaseWith(
-        CebelcaAPI.createService(s"${Marker}alpha_widget", 10, "kos", 22, "", "") <*>
-          CebelcaAPI.createService(s"${Marker}beta_gadget", 20, "kos", 22, "", "")
+        CebelcaAPI.createService(ServiceFields(s"${Marker}alpha_widget", 10, "kos", 22, "", "")) <*>
+          CebelcaAPI.createService(ServiceFields(s"${Marker}beta_gadget", 20, "kos", 22, "", ""))
       ) { case (a, b) => CebelcaAPI.deleteService(a.id).ignore *> CebelcaAPI.deleteService(b.id).ignore } {
         case (a, b) =>
           for
-            all     <- CebelcaAPI.servicesFiltered(None)
-            widget  <- CebelcaAPI.servicesFiltered(Some("alpha_widget"))
-            upper   <- CebelcaAPI.servicesFiltered(Some("ALPHA_WIDGET"))
-            none    <- CebelcaAPI.servicesFiltered(Some("nomatch_zzz_qqq"))
+            all     <- CebelcaAPI.services(None)
+            widget  <- CebelcaAPI.services(Some("alpha_widget"))
+            upper   <- CebelcaAPI.services(Some("ALPHA_WIDGET"))
+            none    <- CebelcaAPI.services(Some("nomatch_zzz_qqq"))
           yield assertTrue(
             // both created services are visible unfiltered
             all.exists(_.id == a.id) && all.exists(_.id == b.id),
@@ -122,12 +116,12 @@ object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
     test("services CRUD: create → update → delete round-trip (self-cleaning)") {
       // acquireReleaseWith guarantees the created service is deleted even if an assertion fails or the effect dies.
       ZIO.acquireReleaseWith(
-        CebelcaAPI.createService(s"${Marker}CREATE", 42.5, "kos", 22.0, "", "")
+        CebelcaAPI.createService(ServiceFields(s"${Marker}CREATE", 42.5, "kos", 22.0, "", ""))
       )(created => CebelcaAPI.deleteService(created.id).ignore) { created =>
         for
-          updated <- CebelcaAPI.updateService(created.id, s"${Marker}UPDATE", 99.9, "ura", 9.5, "", "")
+          updated <- CebelcaAPI.updateService(created.id, ServiceFields(s"${Marker}UPDATE", 99.9, "ura", 9.5, "", ""))
           deleted <- CebelcaAPI.deleteService(created.id)
-          after   <- CebelcaAPI.services
+          after   <- CebelcaAPI.services()
         yield assertTrue(
           created.object_title == s"${Marker}CREATE",
           created.price == 42.5,
@@ -141,12 +135,35 @@ object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
         )
       }
     },
-    // Runs last (suite is sequential): sweep any services left over from an interrupted run and assert none remained.
-    test("services cleanup sweep: no test residue survives") {
+    test("partners CRUD: create → update → delete round-trip (self-cleaning)") {
+      ZIO.acquireReleaseWith(
+        CebelcaAPI.createPartner(PartnerFields(s"${Marker}CREATE", city = "Ljubljana", vatid = "SI11111111", country = "SI"))
+      )(created => CebelcaAPI.deletePartner(created.id).ignore) { created =>
+        for
+          updated <- CebelcaAPI.updatePartner(created.id, PartnerFields(s"${Marker}UPDATE", city = "Maribor"))
+          deleted <- CebelcaAPI.deletePartner(created.id)
+          after   <- CebelcaAPI.partnersFiltered("all", Some(Marker))
+        yield assertTrue(
+          created.name == s"${Marker}CREATE",
+          created.city == "Ljubljana",
+          created.vatid == "SI11111111",
+          created.id > 0,
+          updated.id == created.id,
+          updated.name == s"${Marker}UPDATE",
+          updated.city == "Maribor",
+          deleted,
+          !after.exists(_.id == created.id)
+        )
+      }
+    },
+    // Runs last (suite is sequential): sweep any services/partners left over from an interrupted run; assert none.
+    test("cleanup sweep: no test residue survives") {
       for
-        orphans <- CebelcaAPI.services.map(_.filter(_.object_title.startsWith(Marker)))
-        _       <- ZIO.foreachDiscard(orphans)(o => CebelcaAPI.deleteService(o.id).ignore)
-      yield assertTrue(orphans.isEmpty)
+        svcOrphans <- CebelcaAPI.services().map(_.filter(_.object_title.startsWith(Marker)))
+        _          <- ZIO.foreachDiscard(svcOrphans)(o => CebelcaAPI.deleteService(o.id).ignore)
+        ptrOrphans <- CebelcaAPI.partnersFiltered("all", Some(Marker))
+        _          <- ZIO.foreachDiscard(ptrOrphans)(o => CebelcaAPI.deletePartner(o.id).ignore)
+      yield assertTrue(svcOrphans.isEmpty, ptrOrphans.isEmpty)
     }
     /*
     test("validation error: empty invoice insert surfaces CebelcaError.Validation") {
@@ -160,8 +177,11 @@ object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
      */
   ).provideShared(layers)
 
-  /** Prefix marking services created by this suite, so any orphan from a hard crash is identifiable and sweepable. */
-  private val Marker = "ZZZ_IT_"
+  /** Prefix marking services/partners created by this suite, so any orphan from a hard crash is identifiable and
+    * sweepable. No underscore: the API's `search` treats `_` as a SQL LIKE wildcard, which would let this marker also
+    * match the GraphQL suite's marker (they run in parallel against the same account).
+    */
+  private val Marker = "ZZZAPITEST"
 
   // Minimal decoder for explore-mode rows. Some descriptions are null.
   final case class ExploreEntry(name: String, description: Option[String]) derives zio.json.JsonDecoder

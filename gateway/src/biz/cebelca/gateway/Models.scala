@@ -49,16 +49,6 @@ final case class InvoiceLine(
   discount: Double
 ) derives JsonDecoder
 
-final case class Item(
-  id: Long,
-  code: String,
-  descr: String,
-  price: Double,
-  unit: String,
-  tax: Double,
-  disabled: Int
-) derives JsonDecoder
-
 /** A service / pricelist entry, as shown on the UI's "Storitve" page. Backed by the `invoice-sent-o` resource
   * (the API's "Items&services for sent invoice bodies"), whose `select-all` returns the pricelist rows.
   */
@@ -74,3 +64,21 @@ final case class Service(
 
 /** The id-only row an `insert-into` returns: `[[{"id":N}]]`. */
 final case class IdRow(id: Long) derives JsonDecoder
+
+/** The writable fields of a service, bundled so create/update take one argument instead of a wide positional list.
+  * Maps to the upstream `invoice-sent-o` wire names in [[CebelcaAPI]].
+  */
+final case class ServiceFields(title: String, price: Double, mu: String, vat: Double, group: String, konto: String)
+
+/** The writable fields of a partner, bundled so create/update take one argument instead of a wide positional list.
+  * Only `name` is required upstream; the rest default to empty. Maps to the upstream `partner` wire names.
+  */
+final case class PartnerFields(
+  name: String,
+  street: String = "",
+  postal: String = "",
+  city: String = "",
+  vatid: String = "",
+  country: String = "",
+  lang: String = ""
+)

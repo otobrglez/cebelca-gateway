@@ -75,7 +75,8 @@ object GraphQLIntegrationSpec extends GatewaySpecDefault:
       for res <- run("{ services { id title price mu vat } }")
       yield assertTrue(
         res.errors.isEmpty,
-        res.data.toString.contains("Management and development")
+        // structural, not tied to a specific live row: at least one service with a non-empty title
+        "\"title\":\"[^\"]+\"".r.findFirstIn(res.data.toString).isDefined
       )
     },
     test("invoices(dateFrom, dateTo): date range filters server-side") {
@@ -156,10 +157,34 @@ object GraphQLIntegrationSpec extends GatewaySpecDefault:
           !after.data.toString.contains(s"\"id\":$id")
         )
       }
+    },
+    test("mutations: createPartner → updatePartner → deletePartner round-trip (self-cleaning)") {
+      ZIO.acquireReleaseWith(
+        run(s"""mutation { createPartner(input: {name: "${Marker}P", city: "Ljubljana", vatid: "SI22222222"}) { id name city vatid } }""")
+      )(created => idFrom(created).fold(ZIO.unit)(id => CebelcaAPI.deletePartner(id).ignore)) { created =>
+        val id = idFrom(created).getOrElse(-1L)
+        for
+          updated <- run(s"""mutation { updatePartner(id: $id, input: {name: "${Marker}P2", city: "Maribor"}) { id name city } }""")
+          deleted <- run(s"mutation { deletePartner(id: $id) }")
+          after   <- run(s"""{ partners(search: "$Marker") { id } }""")
+        yield assertTrue(
+          created.errors.isEmpty,
+          id > 0,
+          created.data.toString.contains("\"vatid\":\"SI22222222\""),
+          updated.errors.isEmpty,
+          updated.data.toString.contains(s"${Marker}P2"),
+          updated.data.toString.contains("\"city\":\"Maribor\""),
+          deleted.errors.isEmpty,
+          deleted.data.toString.contains("\"deletePartner\":true"),
+          !after.data.toString.contains(s"\"id\":$id")
+        )
+      }
     }
   ).provideShared(layers)
 
-  private val Marker = "ZZZ_ITG_"
+  // No underscore: the API's `search` treats `_` as a SQL LIKE wildcard. A distinct alphabetic marker keeps this
+  // suite's rows from matching the API suite's marker (both run in parallel against the same account).
+  private val Marker = "ZZZGQLTEST"
 
   /** Pull `createService.id` out of a GraphQL response, if present. */
   private def idFrom(res: caliban.GraphQLResponse[Any]): Option[Long] =
