@@ -73,7 +73,9 @@ object gateway extends CebelcaModule with DockerModule:
     def envVars      = Map("PORT" -> "8080")
 
     // Registry path matches k8s/base/kustomization.yaml. `latest` plus a git-derived tag so deploys are pinnable.
-    private def gitTag = Task {
+    // `Task.Input` (not `Task`): git HEAD is external state, so this must be re-read every run — a cached `Task` would
+    // pin whatever SHA was current the first time it evaluated this session and push a stale tag after a new commit.
+    private def gitTag = Task.Input {
       os.proc("git", "describe", "--tags", "--always", "--dirty")
         .call(cwd = mill.api.BuildCtx.workspaceRoot, check = false)
         .out
@@ -156,7 +158,8 @@ object `schema-gen` extends CebelcaModule:
 
   def schemaFile = Task(mill.api.BuildCtx.workspaceRoot / "schema.graphql")
 
-  private def gitVersion = Task {
+  // `Task.Input`: git HEAD is external state that must be re-read every run (see gateway.docker.gitTag).
+  private def gitVersion = Task.Input {
     os.proc("git", "describe", "--tags", "--always", "--dirty", "--long")
       .call(cwd = mill.api.BuildCtx.workspaceRoot, check = false)
       .out
