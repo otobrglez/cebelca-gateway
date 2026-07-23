@@ -3,6 +3,6 @@ resources:
 
 images:
 - name: registry.folk-decibel.ts.net/cebelca/gateway
-  newTag: 8a84054
+  newTag: 137da2f
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
