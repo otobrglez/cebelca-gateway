@@ -61,6 +61,22 @@ enum InvoiceFilter(val wire: String):
   case PastDue  extends InvoiceFilter("pastdue")
   case Archived extends InvoiceFilter("archived")
 
+/** The kind of document a draft becomes when finalized, selecting both its semantics and its own numbering series. Each
+  * case maps to the upstream integer `doctype` (per the cebelca UI: `0 inv, 1 avans, 2 credit note, 3 storno, 10 final`).
+  *
+  *   - [[Invoice]]      — a regular invoice (`0`, the default)
+  *   - [[Advance]]      — an advance/prepayment invoice (avansni račun, `1`)
+  *   - [[CreditNote]]   — a credit note (dobropis, `2`)
+  *   - [[Storno]]       — a cancellation/reversal document (`3`)
+  *   - [[FinalInvoice]] — a final invoice settling a prior advance (končni račun, `10`)
+  */
+enum DocumentType(val wire: Int):
+  case Invoice      extends DocumentType(0)
+  case Advance      extends DocumentType(1)
+  case CreditNote   extends DocumentType(2)
+  case Storno       extends DocumentType(3)
+  case FinalInvoice extends DocumentType(10)
+
 /** Arguments for the `invoices(filter:, dateFrom:, dateTo:)` query and the nested `partner.invoices(…)` field. All
   * optional: `filter` is a status tab (defaults to `all` upstream); `dateFrom`/`dateTo` bound `date_sent` (inclusive,
   * open-ended if omitted). Dates are **ISO `YYYY-MM-DD`** (the format the upstream `select-all-by` expects). All are
@@ -181,3 +197,58 @@ final private[graphql] case class ServiceInput(
 private[graphql] object ServiceInput:
   def toFields(i: ServiceInput): gateway.ServiceFields =
     gateway.ServiceFields(i.title, i.price, i.mu, i.vat, i.group.getOrElse(""), i.konto.getOrElse(""))
+
+/** A payment recorded against an invoice, mirroring the upstream `invoice-sent-p` row. */
+final private[graphql] case class Payment(
+  id: Long,
+  invoiceId: Long,
+  dateOf: String,
+  amount: Double,
+  paymentMethod: Long,
+  note: String
+)
+private[graphql] object Payment:
+  def from(p: gateway.Payment): Payment =
+    Payment(p.id, p.id_invoice_sent, p.date_of, p.amount, p.id_payment_method, p.note)
+
+/** Input for recording a payment. `dateOf` is ISO `YYYY-MM-DD`; `paymentMethod` defaults to the UI's default (1) when
+  * omitted; `note` is optional.
+  */
+final private[graphql] case class PaymentInput(
+  invoiceId: Long,
+  dateOf: String,
+  amount: Double,
+  paymentMethod: Option[Long],
+  note: Option[String]
+)
+private[graphql] object PaymentInput:
+  def toFields(i: PaymentInput): gateway.PaymentFields =
+    gateway.PaymentFields(i.invoiceId, i.dateOf, i.amount, i.paymentMethod.getOrElse(1L), i.note.getOrElse(""))
+
+/** Input for one invoice line item. `mu` (unit) defaults to `kos`; `discount` to 0. */
+final private[graphql] case class LineInput(
+  title: String,
+  qty: Double,
+  price: Double,
+  vat: Double,
+  mu: Option[String],
+  discount: Option[Double]
+)
+private[graphql] object LineInput:
+  def toFields(i: LineInput): gateway.LineFields =
+    gateway.LineFields(i.title, i.qty, i.price, i.vat, i.mu.getOrElse("kos"), i.discount.getOrElse(0.0))
+
+/** Input for creating/updating an invoice head. Dates are **ISO `YYYY-MM-DD`** (the gateway converts to the SI format
+  * the upstream insert requires); `dateServed` defaults to `dateSent`. `lines` is optional inline creation — omit and
+  * use the line mutations to build up an invoice incrementally.
+  */
+final private[graphql] case class InvoiceInput(
+  dateSent: String,
+  dateToPay: String,
+  partnerId: Long,
+  dateServed: Option[String],
+  lines: Option[List[LineInput]]
+)
+private[graphql] object InvoiceInput:
+  def toFields(i: InvoiceInput): gateway.InvoiceFields =
+    gateway.InvoiceFields(i.dateSent, i.dateToPay, i.partnerId, i.dateServed)

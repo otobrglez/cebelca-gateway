@@ -7,6 +7,14 @@ import mill.contrib.docker.DockerModule
 /** Shared settings for all modules in this build. */
 trait CebelcaModule extends ScalaModule:
   def scalaVersion = "3.8.4"
+  def scalacOptions = Seq(
+    "-deprecation",
+    "-encoding",
+    "UTF-8",
+    "-feature",
+    "-unchecked",
+    "-explain"
+  )
 
   def repositories = Seq(
     "https://oss.sonatype.org/content/repositories/releases",

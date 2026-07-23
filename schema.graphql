@@ -6,7 +6,7 @@
 #
 # To regenerate: ./mill schema-gen.generate
 #
-# Generated from git: da0940c
+# Generated from git: 9ce7a68-dirty
 # ─────────────────────────────────────────────────────────────────────────────
 
 schema {
@@ -15,6 +15,14 @@ schema {
 }
 
 scalar Long
+
+enum DocumentType {
+  Advance
+  CreditNote
+  FinalInvoice
+  Invoice
+  Storno
+}
 
 enum InvoiceFilter {
   All
@@ -33,6 +41,23 @@ enum PartnerFilter {
   WithSent
 }
 
+input InvoiceInput {
+  dateSent: String!
+  dateToPay: String!
+  partnerId: Long!
+  dateServed: String
+  lines: [LineInput!]
+}
+
+input LineInput {
+  title: String!
+  qty: Float!
+  price: Float!
+  vat: Float!
+  mu: String
+  discount: Float
+}
+
 input PartnerInput {
   name: String!
   street: String
@@ -41,6 +66,14 @@ input PartnerInput {
   vatid: String
   country: String
   lang: String
+}
+
+input PaymentInput {
+  invoiceId: Long!
+  dateOf: String!
+  amount: Float!
+  paymentMethod: Long
+  note: String
 }
 
 input ServiceInput {
@@ -79,6 +112,16 @@ type Mutations {
   createPartner(input: PartnerInput!): Partner
   updatePartner(id: Long!, input: PartnerInput!): Partner
   deletePartner(id: Long!): Boolean
+  recordPayment(input: PaymentInput!): Payment
+  deletePayment(id: Long!): Boolean
+  createInvoice(input: InvoiceInput!): Invoice
+  updateInvoice(id: Long!, input: InvoiceInput!): Invoice
+  deleteInvoice(id: Long!): Boolean
+  addInvoiceLine(invoiceId: Long!, input: LineInput!): Invoice
+  updateInvoiceLine(id: Long!, invoiceId: Long!, input: LineInput!): Invoice
+  deleteInvoiceLine(id: Long!): Boolean
+  finalizeInvoice(id: Long!, docType: DocumentType, title: String): Invoice
+  duplicateInvoice(id: Long!): Invoice
 }
 
 type Partner {
@@ -93,11 +136,21 @@ type Partner {
   invoices(filter: InvoiceFilter, dateFrom: String, dateTo: String): [Invoice!]
 }
 
+type Payment {
+  id: Long!
+  invoiceId: Long!
+  dateOf: String!
+  amount: Float!
+  paymentMethod: Long!
+  note: String!
+}
+
 type Queries {
   partners(ids: [Long!], filter: PartnerFilter, search: String, page: Int): [Partner!]
   partner(id: Long!): Partner
   services(search: String): [Service!]
   invoices(filter: InvoiceFilter, dateFrom: String, dateTo: String): [Invoice!]
+  proposedInvoiceTitle(year: Int!, docType: DocumentType): String
 }
 
 type Service {

@@ -45,5 +45,14 @@ object BackendTest extends GatewaySpecDefault:
         request.url.queryParams == QueryParams("_m" -> "select-all-by", "_r" -> "invoice-sent-o"),
         body.split("&").toSet == Set("filter=all", "company=0", "page=-1", "search=consulting")
       )
+    },
+    test("Dates.isoToSi converts ISO to SI, passes through non-ISO") {
+      assertTrue(
+        Dates.isoToSi("2026-07-23") == "23.07.2026",
+        Dates.isoToSi("2026-01-05") == "05.01.2026",
+        // non-ISO input is returned unchanged (upstream validates)
+        Dates.isoToSi("23.07.2026") == "23.07.2026",
+        Dates.isoToSi("") == ""
+      )
     }
   )

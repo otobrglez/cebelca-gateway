@@ -156,6 +156,84 @@ object CebelcaAPIIntegrationSpec extends GatewaySpecDefault:
         )
       }
     },
+    test("recordPayment: records a payment against an invoice (self-cleaning invoice + payment)") {
+      // A payment needs an invoice, so create a throwaway one first; nested acquireRelease deletes both on any exit.
+      def newInvoice = ZIO.serviceWithZIO[CebelcaAPI](
+        _.queryFirst[IdRow](Cmd.insert("invoice-sent", "date_sent" -> "2026-07-23", "date_to_pay" -> "2026-07-30", "id_partner" -> "7"))
+      )
+      def delInvoice(id: Long) = ZIO.serviceWithZIO[CebelcaAPI](_.ack(Cmd.delete("invoice-sent", id))).ignore
+      ZIO.acquireReleaseWith(newInvoice)(inv => delInvoice(inv.id)) { inv =>
+        ZIO.acquireReleaseWith(
+          CebelcaAPI.recordPayment(PaymentFields(inv.id, "2026-07-23", 123.45, note = s"${Marker}pay"))
+        )(pay => CebelcaAPI.deletePayment(pay.id).ignore) { pay =>
+          for reread <- CebelcaAPI.payment(pay.id)
+          yield assertTrue(
+            pay.id > 0,
+            pay.id_invoice_sent == inv.id,
+            pay.amount == 123.45,
+            pay.date_of == "2026-07-23",
+            pay.id_payment_method == 1, // defaulted
+            pay.note == s"${Marker}pay",
+            reread.id == pay.id,
+            reread.amount == 123.45
+          )
+        }
+      }
+    },
+    test("invoice CRUD: create (inline lines) → add/update/delete line → finalize → delete (self-cleaning)") {
+      ZIO.acquireReleaseWith(
+        CebelcaAPI.createInvoice(
+          InvoiceFields("2026-07-23", "2026-07-30", 7),
+          List(LineFields("Consulting", 10, 100, 22), LineFields("Setup", 1, 50, 22))
+        )
+      )(inv => CebelcaAPI.deleteInvoice(inv.id).ignore) { inv =>
+        for
+          // ISO→SI conversion regression: the date must be stored, not silently emptied
+          created  <- CebelcaAPI.invoice(inv.id)
+          lineId   <- CebelcaAPI.addLine(inv.id, LineFields("Extra", 2, 5, 22))
+          updated  <- CebelcaAPI.updateLine(lineId, inv.id, LineFields("Extra renamed", 3, 7, 9.5))
+          _        <- CebelcaAPI.deleteLine(lineId)
+          finalized <- CebelcaAPI.finalizeInvoice(inv.id)
+        yield assertTrue(
+          inv.id > 0,
+          created.date_sent == "2026-07-23", // NOT empty — the conversion worked
+          created.id_partner == 7,
+          created.title.isEmpty,             // draft has no number yet
+          updated.id == lineId,
+          updated.title == "Extra renamed",
+          updated.qty == 3.0,
+          finalized.title.nonEmpty           // finalization assigned a number
+        )
+      }
+    },
+    test("proposedInvoiceTitle: returns the recommended next number for a year") {
+      for title <- CebelcaAPI.proposedInvoiceTitle(2026)
+      yield assertTrue(title.nonEmpty, title.startsWith("26-"))
+    },
+    test("finalizeInvoice: an explicit title overrides the auto-assigned number (self-cleaning)") {
+      val custom = "26-ITTEST-1"
+      ZIO.acquireReleaseWith(
+        CebelcaAPI.createInvoice(InvoiceFields("2026-07-23", "2026-07-30", 7), Nil)
+      )(inv => CebelcaAPI.deleteInvoice(inv.id).ignore) { inv =>
+        for finalized <- CebelcaAPI.finalizeInvoice(inv.id, title = Some(custom))
+        yield assertTrue(finalized.title == custom)
+      }
+    },
+    test("duplicateInvoice: copies lines into a new draft (self-cleaning source + dup)") {
+      ZIO.acquireReleaseWith(
+        CebelcaAPI.createInvoice(InvoiceFields("2026-07-23", "2026-07-30", 7), List(LineFields("Consulting", 10, 100, 22)))
+      )(src => CebelcaAPI.deleteInvoice(src.id).ignore) { src =>
+        ZIO.acquireReleaseWith(CebelcaAPI.duplicateInvoice(src.id))(dup => CebelcaAPI.deleteInvoice(dup.id).ignore) { dup =>
+          for lines <- CebelcaAPI.invoiceLines.map(_.filter(_.id_invoice_sent == dup.id))
+          yield assertTrue(
+            dup.id != src.id,
+            dup.id_partner == 7,
+            dup.title.isEmpty,               // the duplicate is a fresh draft
+            lines.exists(_.title == "Consulting") // lines were copied
+          )
+        }
+      }
+    },
     // Runs last (suite is sequential): sweep any services/partners left over from an interrupted run; assert none.
     test("cleanup sweep: no test residue survives") {
       for

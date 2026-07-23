@@ -65,8 +65,12 @@ object Cmd:
     * never be optional at any layer above this.
     */
   def delete(resource: String, id: Long): Cmd = Cmd(resource, "delete", Map("id" -> id.toString))
-  def exploreResources: Cmd                   = Cmd("", "", explore = true)
-  def exploreMethods(resource: String): Cmd   = Cmd(resource, "", explore = true)
+
+  /** Generic builder for methods that don't fit the CRUD helpers, e.g. `invoice-sent finalize-invoice-2015`. */
+  def custom(resource: String, method: String, args: (String, String)*): Cmd = Cmd(resource, method, args.toMap)
+
+  def exploreResources: Cmd                 = Cmd("", "", explore = true)
+  def exploreMethods(resource: String): Cmd = Cmd(resource, "", explore = true)
 
 final case class Backend(baseUrl: URL):
   def toRequest(c: Cmd): Request =

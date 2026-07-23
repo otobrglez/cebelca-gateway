@@ -1,0 +1,25 @@
+mutation {
+    createInvoice(
+        input: {
+            dateSent: "2026-10-23"
+            dateToPay: "2026-11-30"
+            partnerId: 7
+            lines: [
+                {title: "Consulting", qty: 10, price: 100, vat: 22}
+                {title: "Setup fee", qty: 1, price: 50, vat: 22, mu: "kos", discount: 0}
+                {title: "Setup fee x2", qty: 1, price: 50, vat: 22, mu: "kos", discount: 0}
+            ]
+        }
+    ) {
+        id
+        title
+        dateSent
+        lines {
+            id
+            title
+            qty
+            price
+            vat
+        }
+    }
+}

@@ -39,7 +39,7 @@ final case class CebelcaAPI private (
     val duration              = Metric.histogram("cebelca_api_request_duration_seconds", CebelcaAPI.apiBuckets).tagged(tags)
     io.exit.timed.flatMap { (elapsed, exit) =>
       val status = if exit.isSuccess then "ok" else "error"
-      count(status).increment *> duration.update(elapsed.toNanos.toDouble / 1e9) *> ZIO.done(exit)
+      count(status).increment *> duration.update(elapsed.toNanos.toDouble / 1e9) *> ZIO.suspendSucceed(exit)
     }
 
   def query[A: JsonDecoder](cmd: Cmd): APITask[List[A]] =
@@ -121,6 +121,104 @@ final case class CebelcaAPI private (
 
   def deletePartner(id: Long): APITask[Boolean] = ack(Cmd.delete("partner", id))
 
+  def payment(id: Long): APITask[Payment] = queryFirst[Payment](Cmd.selectOne("invoice-sent-p", id))
+
+  /** Record a payment against an invoice (`invoice-sent-p insert-into`). `date_of` is ISO `YYYY-MM-DD`. `insert-into`
+    * returns only the new id, so we re-read the full row to return it.
+    */
+  def recordPayment(f: PaymentFields): APITask[Payment] =
+    queryFirst[IdRow](
+      Cmd.insert(
+        "invoice-sent-p",
+        "id_invoice_sent"   -> f.invoiceId.toString,
+        "date_of"           -> f.dateOf,
+        "amount"            -> f.amount.toString,
+        "id_payment_method" -> f.paymentMethod.toString,
+        "note"              -> f.note
+      )
+    ).flatMap(row => payment(row.id))
+
+  def deletePayment(id: Long): APITask[Boolean] = ack(Cmd.delete("invoice-sent-p", id))
+
+  def invoice(id: Long): APITask[InvoiceHead] = queryFirst[InvoiceHead](Cmd.selectOne("invoice-sent", id))
+
+  /** Invoice head wire fields. Dates are converted ISO→SI (`DD.MM.YYYY`): the upstream insert silently stores an empty
+    * date if given ISO. `date_served` defaults to `date_sent` when the caller omits it.
+    */
+  private def invoiceWire(f: InvoiceFields): Seq[(String, String)] =
+    Seq(
+      "date_sent"   -> Dates.isoToSi(f.dateSent),
+      "date_to_pay" -> Dates.isoToSi(f.dateToPay),
+      "date_served" -> Dates.isoToSi(f.dateServed.getOrElse(f.dateSent)),
+      "id_partner"  -> f.partnerId.toString
+    )
+
+  private def lineWire(invoiceId: Long, l: LineFields): Seq[(String, String)] =
+    Seq(
+      "title"           -> l.title,
+      "qty"             -> l.qty.toString,
+      "mu"              -> l.mu,
+      "price"           -> l.price.toString,
+      "vat"             -> l.vat.toString,
+      "discount"        -> l.discount.toString,
+      "id_invoice_sent" -> invoiceId.toString
+    )
+
+  def createInvoiceHead(f: InvoiceFields): APITask[Long] =
+    queryFirst[IdRow](Cmd.insert("invoice-sent", invoiceWire(f)*)).map(_.id)
+
+  def updateInvoiceHead(id: Long, f: InvoiceFields): APITask[InvoiceHead] =
+    queryFirst[InvoiceHead](Cmd.update("invoice-sent", id, invoiceWire(f)*))
+
+  /** Delete an invoice. Upstream `invoice-sent delete` returns a spurious HTTP 500 even when the row IS deleted, so we
+    * can't trust the ack — instead we ignore the delete's result and verify by re-reading: gone (empty) ⇒ success.
+    */
+  def deleteInvoice(id: Long): APITask[Boolean] =
+    ack(Cmd.delete("invoice-sent", id)).ignore *>
+      query[InvoiceHead](Cmd.selectOne("invoice-sent", id)).map(_.isEmpty)
+
+  def addLine(invoiceId: Long, l: LineFields): APITask[Long] =
+    queryFirst[IdRow](Cmd.insert("invoice-sent-b", lineWire(invoiceId, l)*)).map(_.id)
+
+  def updateLine(lineId: Long, invoiceId: Long, l: LineFields): APITask[InvoiceLine] =
+    queryFirst[InvoiceLine](Cmd.update("invoice-sent-b", lineId, lineWire(invoiceId, l)*))
+
+  def deleteLine(lineId: Long): APITask[Boolean] = ack(Cmd.delete("invoice-sent-b", lineId))
+
+  /** Create a draft invoice: insert the head, then each line in order, and return the (re-read) head. */
+  def createInvoice(f: InvoiceFields, lines: List[LineFields]): APITask[InvoiceHead] =
+    for
+      id <- createInvoiceHead(f)
+      _  <- ZIO.foreachDiscard(lines)(addLine(id, _))
+      hd <- invoice(id)
+    yield hd
+
+  /** The recommended next invoice number for a year (`select-next-title`), e.g. `26-0004`. `doctype` selects the
+    * numbering series (default 0). This is what the UI pre-fills into the finalize dialog's editable number field.
+    */
+  def proposedInvoiceTitle(year: Int, doctype: Int = 0): APITask[String] =
+    queryFirst[ProposedTitle](
+      Cmd.custom("invoice-sent", "select-next-title", "year" -> year.toString, "doctype" -> doctype.toString)
+    ).map(_.proposed_title)
+
+  /** Finalize a draft into a numbered document WITHOUT fiscal/FURS registration (`finalize-invoice-2015`). Assigns the
+    * invoice number; we ignore the `new_title` ack and re-read the head so the caller gets the numbered invoice.
+    * `doctype` selects the numbering series (default 0, matching existing invoices). `title` optionally overrides the
+    * auto-assigned number (matching the UI's editable proposed-number field); omit it to let the server assign the
+    * next number. A duplicate title fails upstream (`not-unique-value-title`).
+    */
+  def finalizeInvoice(id: Long, doctype: Int = 0, title: Option[String] = None): APITask[InvoiceHead] =
+    val args = Seq("id" -> id.toString, "doctype" -> doctype.toString) ++ title.filter(_.nonEmpty).map("title" -> _)
+    ack(Cmd.custom("invoice-sent", "finalize-invoice-2015", args*)) *> invoice(id)
+
+  /** Duplicate an invoice into a new DRAFT (`duplicate-invoice`): copies the partner and line items, resets `date_sent`
+    * to today (with `date_to_pay` recomputed) and clears the number — so it works as a "reissue" of any invoice, even a
+    * finalized one. Returns the (re-read) new draft head.
+    */
+  def duplicateInvoice(id: Long): APITask[InvoiceHead] =
+    queryFirst[RowId](Cmd.custom("invoice-sent", "duplicate-invoice", "id" -> id.toString))
+      .flatMap(row => invoice(row.id))
+
 object CebelcaAPI:
   private type APITask[+A] = ZIO[CebelcaAPI & CebelcaToken, CebelcaError, A]
   private val baseUrl = URL.decode("https://www.cebelca.biz/API").toOption.get
@@ -164,3 +262,21 @@ object CebelcaAPI:
   def createPartner(f: PartnerFields): APITask[Partner]           = mapZIO(_.createPartner(f))
   def updatePartner(id: Long, f: PartnerFields): APITask[Partner] = mapZIO(_.updatePartner(id, f))
   def deletePartner(id: Long): APITask[Boolean]                   = mapZIO(_.deletePartner(id))
+
+  def payment(id: Long): APITask[Payment]              = mapZIO(_.payment(id))
+  def recordPayment(f: PaymentFields): APITask[Payment] = mapZIO(_.recordPayment(f))
+  def deletePayment(id: Long): APITask[Boolean]        = mapZIO(_.deletePayment(id))
+
+  def invoice(id: Long): APITask[InvoiceHead]                              = mapZIO(_.invoice(id))
+  def createInvoice(f: InvoiceFields, lines: List[LineFields]): APITask[InvoiceHead] =
+    mapZIO(_.createInvoice(f, lines))
+  def updateInvoiceHead(id: Long, f: InvoiceFields): APITask[InvoiceHead]  = mapZIO(_.updateInvoiceHead(id, f))
+  def deleteInvoice(id: Long): APITask[Boolean]                           = mapZIO(_.deleteInvoice(id))
+  def addLine(invoiceId: Long, l: LineFields): APITask[Long]              = mapZIO(_.addLine(invoiceId, l))
+  def updateLine(lineId: Long, invoiceId: Long, l: LineFields): APITask[InvoiceLine] =
+    mapZIO(_.updateLine(lineId, invoiceId, l))
+  def deleteLine(lineId: Long): APITask[Boolean]                         = mapZIO(_.deleteLine(lineId))
+  def proposedInvoiceTitle(year: Int, doctype: Int = 0): APITask[String] = mapZIO(_.proposedInvoiceTitle(year, doctype))
+  def finalizeInvoice(id: Long, doctype: Int = 0, title: Option[String] = None): APITask[InvoiceHead] =
+    mapZIO(_.finalizeInvoice(id, doctype, title))
+  def duplicateInvoice(id: Long): APITask[InvoiceHead] = mapZIO(_.duplicateInvoice(id))

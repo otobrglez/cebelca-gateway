@@ -179,6 +179,66 @@ object GraphQLIntegrationSpec extends GatewaySpecDefault:
           !after.data.toString.contains(s"\"id\":$id")
         )
       }
+    },
+    test("mutations: recordPayment → deletePayment round-trip (self-cleaning invoice + payment)") {
+      // A payment needs an invoice; create a throwaway one via the API, clean both up on any exit.
+      def newInvoice = ZIO.serviceWithZIO[CebelcaAPI](
+        _.queryFirst[IdRow](Cmd.insert("invoice-sent", "date_sent" -> "2026-07-23", "date_to_pay" -> "2026-07-30", "id_partner" -> "7"))
+      )
+      def delInvoice(id: Long) = ZIO.serviceWithZIO[CebelcaAPI](_.ack(Cmd.delete("invoice-sent", id))).ignore
+      ZIO.acquireReleaseWith(newInvoice)(inv => delInvoice(inv.id)) { inv =>
+        ZIO.acquireReleaseWith(
+          run(s"""mutation { recordPayment(input: {invoiceId: ${inv.id}, dateOf: "2026-07-23", amount: 77.5}) { id invoiceId amount paymentMethod } }""")
+        )(created => idFrom(created).fold(ZIO.unit)(id => CebelcaAPI.deletePayment(id).ignore)) { created =>
+          val id = idFrom(created).getOrElse(-1L)
+          for deleted <- run(s"mutation { deletePayment(id: $id) }")
+          yield assertTrue(
+            created.errors.isEmpty,
+            id > 0,
+            created.data.toString.contains(s"\"invoiceId\":${inv.id}"),
+            created.data.toString.contains("\"amount\":77.5"),
+            created.data.toString.contains("\"paymentMethod\":1"),
+            deleted.errors.isEmpty,
+            deleted.data.toString.contains("\"deletePayment\":true")
+          )
+        }
+      }
+    },
+    test("mutations: createInvoice (inline lines, ISO dates) → finalize → delete (self-cleaning)") {
+      ZIO.acquireReleaseWith(
+        run(s"""mutation { createInvoice(input: {dateSent: "2026-07-23", dateToPay: "2026-07-30", partnerId: 7, lines: [{title: "Consulting", qty: 10, price: 100, vat: 22}]}) { id title dateSent lines { title qty } } }""")
+      )(created => idFrom(created).fold(ZIO.unit)(id => CebelcaAPI.deleteInvoice(id).ignore)) { created =>
+        val id = idFrom(created).getOrElse(-1L)
+        for
+          finalized <- run(s"mutation { finalizeInvoice(id: $id) { id title } }")
+          deleted   <- run(s"mutation { deleteInvoice(id: $id) }")
+        yield assertTrue(
+          created.errors.isEmpty,
+          id > 0,
+          // ISO date survived the ISO→SI conversion (the bug this prevents: silently-empty date)
+          created.data.toString.contains("\"dateSent\":\"2026-07-23\""),
+          created.data.toString.contains("\"title\":\"Consulting\""),
+          finalized.errors.isEmpty,
+          // finalization assigned a non-empty invoice number
+          "\"title\":\"[^\"]+\"".r.findFirstIn(finalized.data.toString).isDefined,
+          deleted.errors.isEmpty,
+          deleted.data.toString.contains("\"deleteInvoice\":true")
+        )
+      }
+    },
+    test("proposedInvoiceTitle: DocumentType enum selects the numbering series") {
+      for
+        invoice    <- run("{ proposedInvoiceTitle(year: 2026, docType: Invoice) }")
+        creditNote <- run("{ proposedInvoiceTitle(year: 2026, docType: CreditNote) }")
+      yield
+        // both are valid year-prefixed numbers, drawn from independent per-type series
+        val re = "\"proposedInvoiceTitle\":\"(26-[^\"]+)\"".r
+        assertTrue(
+          invoice.errors.isEmpty,
+          creditNote.errors.isEmpty,
+          re.findFirstIn(invoice.data.toString).isDefined,
+          re.findFirstIn(creditNote.data.toString).isDefined
+        )
     }
   ).provideShared(layers)
 
