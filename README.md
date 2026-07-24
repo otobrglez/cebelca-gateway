@@ -8,6 +8,8 @@ The gateway is designed to serve **all tenants**, meaning you only need an API k
 
 You can obtain an API key via ["Nastavitve -> API dostop"](https://www.cebelca.biz/manage/access.html)
 
+Please note that there is also a related [cebelca-cli](https://github.com/otobrglez/cebelca-cli) project that uses this gateway to interact with the Čebelca.BIZ service.
+
 # Production
 
 The recent version of the gateway with UI is auto-deployed at: [`cebelca-gateway.pinkstack.com`](https://cebelca-gateway.pinkstack.com).
