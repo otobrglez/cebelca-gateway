@@ -180,7 +180,7 @@ object GraphQLIntegrationSpec extends GatewaySpecDefault:
         )
       }
     },
-    test("mutations: recordPayment → deletePayment round-trip (self-cleaning invoice + payment)") {
+    test("mutations: recordPayment → updatePayment → deletePayment round-trip (self-cleaning invoice + payment)") {
       // A payment needs an invoice; create a throwaway one via the API, clean both up on any exit.
       def newInvoice = ZIO.serviceWithZIO[CebelcaAPI](
         _.queryFirst[IdRow](Cmd.insert("invoice-sent", "date_sent" -> "2026-07-23", "date_to_pay" -> "2026-07-30", "id_partner" -> "7"))
@@ -188,16 +188,23 @@ object GraphQLIntegrationSpec extends GatewaySpecDefault:
       def delInvoice(id: Long) = ZIO.serviceWithZIO[CebelcaAPI](_.ack(Cmd.delete("invoice-sent", id))).ignore
       ZIO.acquireReleaseWith(newInvoice)(inv => delInvoice(inv.id)) { inv =>
         ZIO.acquireReleaseWith(
-          run(s"""mutation { recordPayment(input: {invoiceId: ${inv.id}, dateOf: "2026-07-23", amount: 77.5}) { id invoiceId amount paymentMethod } }""")
+          run(s"""mutation { recordPayment(input: {invoiceId: ${inv.id}, dateOf: "2026-07-23", amount: 77.5}) { id invoiceId amount paymentMethod note } }""")
         )(created => idFrom(created).fold(ZIO.unit)(id => CebelcaAPI.deletePayment(id).ignore)) { created =>
           val id = idFrom(created).getOrElse(-1L)
-          for deleted <- run(s"mutation { deletePayment(id: $id) }")
+          for
+            // full-replace update: change amount + add a note, keeping the other fields
+            updated <- run(s"""mutation { updatePayment(id: $id, input: {invoiceId: ${inv.id}, dateOf: "2026-07-23", amount: 99.9, note: "revised"}) { id invoiceId amount note } }""")
+            deleted <- run(s"mutation { deletePayment(id: $id) }")
           yield assertTrue(
             created.errors.isEmpty,
             id > 0,
             created.data.toString.contains(s"\"invoiceId\":${inv.id}"),
             created.data.toString.contains("\"amount\":77.5"),
             created.data.toString.contains("\"paymentMethod\":1"),
+            updated.errors.isEmpty,
+            updated.data.toString.contains(s"\"id\":$id"),
+            updated.data.toString.contains("\"amount\":99.9"),
+            updated.data.toString.contains("\"note\":\"revised\""),
             deleted.errors.isEmpty,
             deleted.data.toString.contains("\"deletePayment\":true")
           )

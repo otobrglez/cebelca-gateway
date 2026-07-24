@@ -26,6 +26,7 @@ final private[graphql] case class CreatePartnerArgs(input: PartnerInput)
 final private[graphql] case class UpdatePartnerArgs(id: Long, input: PartnerInput)
 final private[graphql] case class DeletePartnerArgs(id: Long)
 final private[graphql] case class RecordPaymentArgs(input: PaymentInput)
+final private[graphql] case class UpdatePaymentArgs(id: Long, input: PaymentInput)
 final private[graphql] case class DeletePaymentArgs(id: Long)
 final private[graphql] case class CreateInvoiceArgs(input: InvoiceInput)
 final private[graphql] case class UpdateInvoiceArgs(id: Long, input: InvoiceInput)
@@ -44,6 +45,7 @@ final case class Mutations(
   updatePartner: UpdatePartnerArgs => RIO[CebelcaToken, graphql.Partner],
   deletePartner: DeletePartnerArgs => RIO[CebelcaToken, Boolean],
   recordPayment: RecordPaymentArgs => RIO[CebelcaToken, graphql.Payment],
+  updatePayment: UpdatePaymentArgs => RIO[CebelcaToken, graphql.Payment],
   deletePayment: DeletePaymentArgs => RIO[CebelcaToken, Boolean],
   createInvoice: CreateInvoiceArgs => RIO[CebelcaToken, graphql.Invoice],
   updateInvoice: UpdateInvoiceArgs => RIO[CebelcaToken, graphql.Invoice],
@@ -70,6 +72,7 @@ object GraphQLAPI:
   private given Schema[Any, graphql.DeletePartnerArgs]        = Schema.gen
   private given Schema[Any, graphql.PartnerInput]             = Schema.gen
   private given Schema[Any, graphql.RecordPaymentArgs]        = Schema.gen
+  private given Schema[Any, graphql.UpdatePaymentArgs]        = Schema.gen
   private given Schema[Any, graphql.DeletePaymentArgs]        = Schema.gen
   private given Schema[Any, graphql.PaymentInput]             = Schema.gen
   private given Schema[Any, graphql.Payment]                  = Schema.gen
@@ -208,6 +211,8 @@ object GraphQLAPI:
         deletePartner = args => api.deletePartner(args.id).resolved,
         recordPayment =
           args => api.recordPayment(graphql.PaymentInput.toFields(args.input)).resolvedAs(graphql.Payment.from),
+        updatePayment =
+          args => api.updatePayment(args.id, graphql.PaymentInput.toFields(args.input)).resolvedAs(graphql.Payment.from),
         deletePayment = args => api.deletePayment(args.id).resolved,
         createInvoice = args =>
           api

@@ -123,20 +123,27 @@ final case class CebelcaAPI private (
 
   def payment(id: Long): APITask[Payment] = queryFirst[Payment](Cmd.selectOne("invoice-sent-p", id))
 
-  /** Record a payment against an invoice (`invoice-sent-p insert-into`). `date_of` is ISO `YYYY-MM-DD`. `insert-into`
-    * returns only the new id, so we re-read the full row to return it.
+  /** The upstream wire fields for a payment row (`invoice-sent-p`). `date_of` is sent as ISO `YYYY-MM-DD` — unlike
+    * invoices, the payment endpoint's `assure-iso-date` coercion accepts ISO directly, so no ISO→SI conversion.
+    */
+  private def paymentWire(f: PaymentFields): Seq[(String, String)] =
+    Seq(
+      "id_invoice_sent"   -> f.invoiceId.toString,
+      "date_of"           -> f.dateOf,
+      "amount"            -> f.amount.toString,
+      "id_payment_method" -> f.paymentMethod.toString,
+      "note"              -> f.note
+    )
+
+  /** Record a payment against an invoice (`invoice-sent-p insert-into`). `insert-into` returns only the new id, so we
+    * re-read the full row to return it.
     */
   def recordPayment(f: PaymentFields): APITask[Payment] =
-    queryFirst[IdRow](
-      Cmd.insert(
-        "invoice-sent-p",
-        "id_invoice_sent"   -> f.invoiceId.toString,
-        "date_of"           -> f.dateOf,
-        "amount"            -> f.amount.toString,
-        "id_payment_method" -> f.paymentMethod.toString,
-        "note"              -> f.note
-      )
-    ).flatMap(row => payment(row.id))
+    queryFirst[IdRow](Cmd.insert("invoice-sent-p", paymentWire(f)*)).flatMap(row => payment(row.id))
+
+  /** Update a payment (full replace). `update-select` echoes the updated row, so no re-read is needed. */
+  def updatePayment(id: Long, f: PaymentFields): APITask[Payment] =
+    queryFirst[Payment](Cmd.update("invoice-sent-p", id, paymentWire(f)*))
 
   def deletePayment(id: Long): APITask[Boolean] = ack(Cmd.delete("invoice-sent-p", id))
 
@@ -263,9 +270,10 @@ object CebelcaAPI:
   def updatePartner(id: Long, f: PartnerFields): APITask[Partner] = mapZIO(_.updatePartner(id, f))
   def deletePartner(id: Long): APITask[Boolean]                   = mapZIO(_.deletePartner(id))
 
-  def payment(id: Long): APITask[Payment]              = mapZIO(_.payment(id))
-  def recordPayment(f: PaymentFields): APITask[Payment] = mapZIO(_.recordPayment(f))
-  def deletePayment(id: Long): APITask[Boolean]        = mapZIO(_.deletePayment(id))
+  def payment(id: Long): APITask[Payment]                        = mapZIO(_.payment(id))
+  def recordPayment(f: PaymentFields): APITask[Payment]          = mapZIO(_.recordPayment(f))
+  def updatePayment(id: Long, f: PaymentFields): APITask[Payment] = mapZIO(_.updatePayment(id, f))
+  def deletePayment(id: Long): APITask[Boolean]                  = mapZIO(_.deletePayment(id))
 
   def invoice(id: Long): APITask[InvoiceHead]                              = mapZIO(_.invoice(id))
   def createInvoice(f: InvoiceFields, lines: List[LineFields]): APITask[InvoiceHead] =

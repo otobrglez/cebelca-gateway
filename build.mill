@@ -13,7 +13,10 @@ trait CebelcaModule extends ScalaModule:
     "UTF-8",
     "-feature",
     "-unchecked",
-    "-explain"
+    "-explain",
+    // caliban derives Schema/ArgBuilder for the large Queries/Mutations products via deeply-nested inlining; the
+    // default max (32) is exceeded as the mutation set grows, so raise it.
+    "-Xmax-inlines:128"
   )
 
   def repositories = Seq(
